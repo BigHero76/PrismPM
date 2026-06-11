@@ -1,0 +1,41 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply m-0 min-h-screen antialiased;
+    color: #FFFFFF;
+    background-color: #000000;
+    background-image:
+      radial-gradient(circle at top left, rgba(255, 230, 0, 0.18), transparent 32%),
+      radial-gradient(circle at top right, rgba(229, 229, 229, 0.08), transparent 28%),
+      linear-gradient(180deg, #000000 0%, #2E2E2E 100%);
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  * {
+    @apply box-border;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading tracking-tight;
+    color: #FFFFFF;
+  }
+}
