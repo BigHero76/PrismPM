@@ -1,16 +1,138 @@
-# React + Vite
+# PrismPM 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+PrismPM is an AI-powered Project Management platform designed to help Project Managers, Business Analysts, and development teams streamline planning, documentation, and project execution.
 
-Currently, two official plugins are available:
+Built as a practical prototype, PrismPM demonstrates how Artificial Intelligence can be integrated into real-world project management workflows to reduce manual effort, improve planning accuracy, and accelerate decision-making.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Features
 
-## React Compiler
+### 📄 AI BRD Generator
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Generate Business Requirement Documents (BRDs) from simple project descriptions.
 
-## Expanding the ESLint configuration
+* Converts project ideas into structured requirements
+* Reduces documentation effort
+* Helps Business Analysts create project artifacts faster
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 📅 AI Timeline Prediction
+
+Predict project timelines based on project scope and requirements.
+
+* Estimates project duration
+* Assists project planning
+* Supports resource allocation decisions
+
+### 🤖 AI-Powered Project Assistance
+
+Leverages AI to automate repetitive project management tasks and improve productivity.
+
+### 📊 Modern Dashboard
+
+Clean and intuitive interface built for project teams.
+
+* Easy navigation
+* Project overview
+* AI-driven workflow support
+
+---
+
+## 🛠 Tech Stack
+
+### Frontend
+
+* React
+* Vite
+* Tailwind CSS
+
+### Development Tools
+
+* JavaScript
+* ESLint
+* Git & GitHub
+
+---
+
+## 🎯 Problem Statement
+
+Project Managers and Business Analysts spend significant time creating documentation, estimating timelines, and managing project planning activities.
+
+PrismPM aims to address these challenges by using AI to:
+
+* Automate documentation generation
+* Improve planning efficiency
+* Reduce manual effort
+* Enable faster project initiation
+
+---
+
+## 🚀 Future Enhancements
+
+* Risk Prediction Engine
+* AI Meeting Minutes Generator
+* Requirement Traceability Matrix Generator
+* Sprint Planning Assistant
+* Resource Allocation Recommendations
+* Project Health Monitoring Dashboard
+* Jira / Trello Integration
+* Multi-project Analytics
+
+---
+
+## 🏗 Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/BigHero76/PrismPM.git
+```
+
+Navigate to the project directory:
+
+```bash
+cd PrismPM
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the development server:
+
+```bash
+npm run dev
+```
+
+---
+
+## 📚 Use Case
+
+PrismPM is designed for:
+
+* Project Managers
+* Business Analysts
+* Product Owners
+* Development Teams
+* Students learning AI applications in Project Management
+
+---
+
+## 🤝 Contributing
+
+Contributions, suggestions, and feedback are welcome.
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+### Built with AI for smarter Project Management.
