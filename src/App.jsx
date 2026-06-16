@@ -8,7 +8,7 @@ const EY = {
   lightGray: "#E5E5E5",
 };
 
-// ─── Groq API helper ───────────────────────────────────────────────────────
+// ─── Groq API Helper ────────────────────────────────────────────────────────
 const GROQ_MODELS = ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"];
 
 async function callGroq(prompt, systemPrompt = "", apiKey = "") {
@@ -20,46 +20,50 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "") {
   let lastError = null;
 
   for (const model of GROQ_MODELS) {
-    const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt || "You are an expert project management AI assistant. Always respond with valid JSON only, no markdown, no extra text." },
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.2,
-          max_tokens: 1000,
-          response_format: {
-            type: "json_object",
-          },
-        }),
-      },
-    );
-
-    const data = await response.json();
-    if (!response.ok) {
-      const message = data.error?.message || data.message || `Groq request failed (${response.status})`;
-      lastError = new Error(message);
-      const modelIssue = /deprecated|not have access|no access|model|unavailable|not found|unsupported/i.test(message);
-      if (modelIssue && model !== GROQ_MODELS[GROQ_MODELS.length - 1]) {
-        continue;
-      }
-      throw lastError;
-    }
-
-    const text = data.choices?.[0]?.message?.content || "";
-    const clean = text.replace(/```json|```/g, "").trim();
     try {
-      return JSON.parse(clean);
-    } catch {
-      return { raw: text };
+      const response = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt || "You are an expert project management AI assistant. Always respond with valid JSON only, no markdown, no extra text." },
+              { role: "user", content: prompt },
+            ],
+            temperature: 0.2,
+            max_tokens: 1200,
+            response_format: {
+              type: "json_object",
+            },
+          }),
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        const message = data.error?.message || data.message || `Groq request failed (${response.status})`;
+        lastError = new Error(message);
+        const modelIssue = /deprecated|not have access|no access|model|unavailable|not found|unsupported/i.test(message);
+        if (modelIssue && model !== GROQ_MODELS[GROQ_MODELS.length - 1]) {
+          continue;
+        }
+        throw lastError;
+      }
+
+      const text = data.choices?.[0]?.message?.content || "";
+      const clean = text.replace(/```json|```/g, "").trim();
+      try {
+        return JSON.parse(clean);
+      } catch {
+        return { raw: text };
+      }
+    } catch (e) {
+      lastError = e;
     }
   }
 
@@ -71,84 +75,46 @@ const INITIAL_PROJECTS = [
   {
     id: 1, name: "FinanceFlow Overhaul", client: "NexaBank Ltd", clientStars: 5,
     pm: "Sarah Chen", ba: "Marcus Webb", type: "Enterprise Banking",
-    status: "At Risk", progress: 62, plannedDays: 120, elapsed: 95,
+    status: "On Track", progress: 0, plannedDays: 120, elapsed: 0,
     description: "Core banking system modernisation with API-first architecture.",
-    risks: [
-      { id: 1, title: "Regulatory compliance gap", severity: "Critical", impact: "Timeline +3 weeks", probability: 80, category: "Compliance" },
-      { id: 2, title: "Legacy API deprecation", severity: "High", impact: "Rework 40% of integrations", probability: 65, category: "Technical" },
-      { id: 3, title: "Key dev leaving Q3", severity: "Medium", impact: "Knowledge transfer needed", probability: 45, category: "Resource" },
-    ],
-    tasks: [
-      { id: 1, name: "Requirements sign-off", status: "Done", due: "2025-02-10", assignee: "Marcus Webb" },
-      { id: 2, name: "API architecture design", status: "Done", due: "2025-03-01", assignee: "Dev Team" },
-      { id: 3, name: "Core module development", status: "In Progress", due: "2025-05-15", assignee: "Dev Team" },
-      { id: 4, name: "UAT preparation", status: "Delayed", due: "2025-05-01", assignee: "QA Team" },
-      { id: 5, name: "Regulatory review", status: "Blocked", due: "2025-04-20", assignee: "Compliance" },
-    ],
+    budget: 280000, spent: 0,
     team: [
       { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Fintech" },
-      { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking" },
-      { name: "Dev Patel", role: "Lead Dev", skillStars: 5, specialty: "APIs" },
-      { name: "Aisha Omar", role: "QA", skillStars: 3, specialty: "Manual Testing" },
-      { name: "Luca Rossi", role: "Architect", skillStars: 4, specialty: "Cloud" },
+      { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking" }
     ],
-    compatibilityScore: 82,
-    budget: 280000, spent: 195000,
+    weeklyLogs: []
   },
   {
     id: 2, name: "RetailPulse Mobile", client: "Zephyr Retail Group", clientStars: 3,
     pm: "James Okonkwo", ba: "Priya Sharma", type: "Mobile App",
-    status: "On Track", progress: 38, plannedDays: 90, elapsed: 34,
+    status: "On Track", progress: 0, plannedDays: 90, elapsed: 0,
     description: "Customer-facing loyalty & shopping mobile app for iOS and Android.",
-    risks: [
-      { id: 1, title: "App store review delays", severity: "Medium", impact: "Launch pushed 2 weeks", probability: 55, category: "External" },
-      { id: 2, title: "Push notification scope creep", severity: "Low", impact: "Extra 5 dev days", probability: 30, category: "Scope" },
-    ],
-    tasks: [
-      { id: 1, name: "UI/UX wireframes", status: "Done", due: "2025-03-15", assignee: "Design Team" },
-      { id: 2, name: "Backend API setup", status: "In Progress", due: "2025-04-10", assignee: "Dev Team" },
-      { id: 3, name: "iOS development", status: "In Progress", due: "2025-05-20", assignee: "iOS Dev" },
-      { id: 4, name: "Android development", status: "Not Started", due: "2025-05-20", assignee: "Android Dev" },
-      { id: 5, name: "Beta testing", status: "Not Started", due: "2025-06-01", assignee: "QA Team" },
-    ],
+    budget: 95000, spent: 0,
     team: [
-      { name: "James Okonkwo", role: "PM", skillStars: 4, specialty: "Mobile" },
-      { name: "Priya Sharma", role: "BA", skillStars: 4, specialty: "Retail" },
-      { name: "Mei Lin", role: "iOS Dev", skillStars: 5, specialty: "Swift" },
-      { name: "Tunde Adeyemi", role: "Android Dev", skillStars: 3, specialty: "Kotlin" },
+      { name: "James Okonkwo", role: "PM", skillStars: 4, specialty: "Mobile Apps" },
+      { name: "Priya Sharma", role: "BA", skillStars: 4, specialty: "Retail" }
     ],
-    compatibilityScore: 76,
-    budget: 95000, spent: 28000,
+    weeklyLogs: []
   },
   {
     id: 3, name: "HealthHub Platform", client: "MedCore Solutions", clientStars: 4,
     pm: "Sarah Chen", ba: "Elena Volkov", type: "Healthcare SaaS",
-    status: "Behind", progress: 20, plannedDays: 150, elapsed: 60,
+    status: "On Track", progress: 0, plannedDays: 150, elapsed: 0,
     description: "Telehealth and patient management SaaS platform with HL7 FHIR compliance.",
-    risks: [
-      { id: 1, title: "HIPAA compliance audit", severity: "Critical", impact: "Full halt if failed", probability: 40, category: "Compliance" },
-      { id: 2, title: "FHIR integration complexity", severity: "High", impact: "Timeline +4 weeks", probability: 70, category: "Technical" },
-      { id: 3, title: "Client changing requirements", severity: "High", impact: "Scope unstable", probability: 75, category: "Scope" },
-      { id: 4, title: "No dedicated security resource", severity: "Medium", impact: "Risk exposure", probability: 60, category: "Resource" },
-    ],
-    tasks: [
-      { id: 1, name: "HIPAA compliance framework", status: "In Progress", due: "2025-04-30", assignee: "Security" },
-      { id: 2, name: "Patient portal design", status: "In Progress", due: "2025-04-15", assignee: "Design" },
-      { id: 3, name: "FHIR API integration", status: "Not Started", due: "2025-06-01", assignee: "Dev Team" },
-      { id: 4, name: "Telehealth video module", status: "Not Started", due: "2025-07-15", assignee: "Dev Team" },
-      { id: 5, name: "Clinical UAT", status: "Not Started", due: "2025-08-01", assignee: "MedCore Team" },
-    ],
+    budget: 420000, spent: 0,
     team: [
-      { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Healthcare IT" },
-      { name: "Elena Volkov", role: "BA", skillStars: 5, specialty: "HL7/FHIR" },
-      { name: "Raj Mehta", role: "Lead Dev", skillStars: 4, specialty: "Healthcare APIs" },
-      { name: "Aisha Omar", role: "QA", skillStars: 3, specialty: "Healthcare" },
-      { name: "Carlos Herrera", role: "Security", skillStars: 3, specialty: "Compliance" },
+      { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Healthcare" },
+      { name: "Elena Volkov", role: "BA", skillStars: 5, specialty: "Healthcare" }
     ],
-    compatibilityScore: 68,
-    budget: 420000, spent: 71000,
+    weeklyLogs: []
   },
 ];
+
+const INITIAL_EPICS = [];
+const INITIAL_STORIES = [];
+const INITIAL_SPRINTS = [];
+const INITIAL_TASKS = [];
+const INITIAL_RISKS = [];
 
 const INITIAL_TEAM_MEMBERS = [
   { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Fintech / Healthcare IT", projects: 2, available: false },
@@ -156,45 +122,20 @@ const INITIAL_TEAM_MEMBERS = [
   { name: "Maya Singh", role: "PM", skillStars: 5, specialty: "ERP / Operations", projects: 3, available: true },
   { name: "Omar Khalid", role: "PM", skillStars: 4, specialty: "Cloud / Data Delivery", projects: 2, available: true },
   { name: "Nadia Rahman", role: "PM", skillStars: 5, specialty: "Transformation / PMO", projects: 2, available: true },
-  { name: "Ethan Brooks", role: "PM", skillStars: 4, specialty: "Delivery / Client Success", projects: 1, available: true },
-  { name: "Fatima Noor", role: "PM", skillStars: 5, specialty: "Healthcare / Regulatory", projects: 3, available: false },
   { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking / ERP", projects: 1, available: false, assignedPm: "Sarah Chen" },
   { name: "Priya Sharma", role: "BA", skillStars: 4, specialty: "Retail / eCommerce", projects: 1, available: true, assignedPm: "James Okonkwo" },
   { name: "Elena Volkov", role: "BA", skillStars: 5, specialty: "Healthcare / HL7", projects: 1, available: false, assignedPm: "Sarah Chen" },
-  { name: "Farah Ali", role: "BA", skillStars: 5, specialty: "Operations / Process Mapping", projects: 2, available: true, assignedPm: "Maya Singh" },
-  { name: "Daniel Kim", role: "BA", skillStars: 4, specialty: "Finance / Process Analysis", projects: 2, available: true, assignedPm: "Omar Khalid" },
-  { name: "Sofia Mendes", role: "BA", skillStars: 5, specialty: "Change / Stakeholder Management", projects: 1, available: true, assignedPm: "Nadia Rahman" },
-  { name: "Owen Price", role: "BA", skillStars: 4, specialty: "Data / Requirements", projects: 3, available: false, assignedPm: "Ethan Brooks" },
   { name: "Dev Patel", role: "Lead Dev", skillStars: 5, specialty: "APIs / Cloud", projects: 1, available: false, assignedPm: "Sarah Chen" },
   { name: "Raj Mehta", role: "Lead Dev", skillStars: 4, specialty: "Healthcare APIs", projects: 1, available: false, assignedPm: "Sarah Chen" },
-  { name: "Lina Hassan", role: "Lead Dev", skillStars: 5, specialty: "Platform / Integration", projects: 2, available: true, assignedPm: "Maya Singh" },
-  { name: "Chris Nolan", role: "Lead Dev", skillStars: 4, specialty: "Cloud Native / DevOps", projects: 1, available: true, assignedPm: "Omar Khalid" },
-  { name: "Aarav Patel", role: "Lead Dev", skillStars: 5, specialty: "Microservices / Architecture", projects: 3, available: false, assignedPm: "Fatima Noor" },
   { name: "Mei Lin", role: "iOS Dev", skillStars: 5, specialty: "Swift / iOS", projects: 1, available: false, assignedPm: "James Okonkwo" },
-  { name: "Grace Turner", role: "iOS Dev", skillStars: 4, specialty: "UIKit / SwiftUI", projects: 2, available: true, assignedPm: "Nadia Rahman" },
-  { name: "Hiro Tanaka", role: "iOS Dev", skillStars: 5, specialty: "Mobile Performance", projects: 1, available: true, assignedPm: "Ethan Brooks" },
-  { name: "Zara Khan", role: "iOS Dev", skillStars: 4, specialty: "App Store Delivery", projects: 2, available: false, assignedPm: "Fatima Noor" },
   { name: "Tunde Adeyemi", role: "Android Dev", skillStars: 3, specialty: "Kotlin", projects: 1, available: true, assignedPm: "James Okonkwo" },
-  { name: "Mila Petrova", role: "Android Dev", skillStars: 4, specialty: "Jetpack Compose", projects: 2, available: true, assignedPm: "Maya Singh" },
-  { name: "Noah Bennett", role: "Android Dev", skillStars: 5, specialty: "Android Architecture", projects: 1, available: false, assignedPm: "Omar Khalid" },
-  { name: "Layla Ahmed", role: "Android Dev", skillStars: 4, specialty: "Kotlin Multiplatform", projects: 3, available: true, assignedPm: "Nadia Rahman" },
   { name: "Aisha Omar", role: "QA", skillStars: 3, specialty: "Manual / Healthcare", projects: 2, available: false, assignedPm: "Sarah Chen" },
-  { name: "Nina Carter", role: "QA", skillStars: 4, specialty: "Automation / E2E", projects: 1, available: true, assignedPm: "Maya Singh" },
-  { name: "Ben Lawson", role: "QA", skillStars: 4, specialty: "Test Strategy / UAT", projects: 2, available: true, assignedPm: "Ethan Brooks" },
-  { name: "Keiko Sato", role: "QA", skillStars: 5, specialty: "Automation / Selenium", projects: 1, available: false, assignedPm: "Fatima Noor" },
-  { name: "Musa Ibrahim", role: "QA", skillStars: 3, specialty: "Regression / Functional", projects: 3, available: true, assignedPm: "Nadia Rahman" },
   { name: "Luca Rossi", role: "Architect", skillStars: 4, specialty: "Cloud / AWS", projects: 1, available: true, assignedPm: "Omar Khalid" },
-  { name: "Priyanka Das", role: "Architect", skillStars: 5, specialty: "Solution Design", projects: 2, available: true, assignedPm: "Sarah Chen" },
-  { name: "Mateo Silva", role: "Architect", skillStars: 4, specialty: "Enterprise Architecture", projects: 1, available: false, assignedPm: "Maya Singh" },
-  { name: "Olivia Hart", role: "Architect", skillStars: 5, specialty: "Security Architecture", projects: 3, available: true, assignedPm: "Fatima Noor" },
-  { name: "Carlos Herrera", role: "Security", skillStars: 3, specialty: "Compliance / HIPAA", projects: 1, available: true, assignedPm: "Sarah Chen" },
-  { name: "Zain Malik", role: "Security", skillStars: 4, specialty: "AppSec / Risk", projects: 1, available: false, assignedPm: "Omar Khalid" },
-  { name: "Riley Evans", role: "Security", skillStars: 5, specialty: "Cloud Security / IAM", projects: 2, available: true, assignedPm: "Nadia Rahman" },
-  { name: "Hana Okafor", role: "Security", skillStars: 4, specialty: "Threat Modeling", projects: 1, available: true, assignedPm: "Ethan Brooks" },
-  { name: "Julian Costa", role: "Security", skillStars: 5, specialty: "AppSec / Pen Testing", projects: 3, available: false, assignedPm: "Fatima Noor" },
 ];
 
-// ─── Utility helpers ────────────────────────────────────────────────────────
+const PM_STORAGE_KEY = "prismpm.team";
+
+// ─── Utility Components ──────────────────────────────────────────────────────
 const Stars = ({ count, max = 5, size = "sm", color = "amber" }) => {
   const sizes = { sm: "text-sm", md: "text-base", lg: "text-xl" };
   const colors = { amber: "text-[#FFE600]", indigo: "text-[#E5E5E5]", emerald: "text-[#FFFFFF]" };
@@ -212,14 +153,18 @@ const StatusBadge = ({ status }) => {
     "On Track": "bg-[#FFE600]/15 text-[#FFE600] border-[#FFE600]/30",
     "At Risk": "bg-[#2E2E2E] text-[#E5E5E5] border-[#E5E5E5]/30",
     "Behind": "bg-[#000000] text-[#FFFFFF] border-[#E5E5E5]/20",
-    "Done": "bg-[#E5E5E5] text-[#000000] border-[#E5E5E5]/40",
-    "In Progress": "bg-[#FFE600]/20 text-[#000000] border-[#FFE600]/40",
+    "Done": "bg-[#FFE600] text-[#000000] border-[#FFE600]/40",
+    "In Progress": "bg-[#FFE600]/20 text-[#FFE600] border-[#FFE600]/40",
     "Not Started": "bg-[#2E2E2E] text-[#E5E5E5] border-[#E5E5E5]/20",
-    "Delayed": "bg-[#FFE600]/15 text-[#FFE600] border-[#FFE600]/30",
+    "Delayed": "bg-[#FFE600]/10 text-[#FFE600] border-[#FFE600]/20",
     "Blocked": "bg-[#000000] text-[#FFE600] border-[#FFE600]/40",
+    "Backlog": "bg-[#2E2E2E] text-slate-400 border-slate-700",
+    "To Do": "bg-slate-800 text-slate-200 border-slate-700",
+    "Review": "bg-amber-950/40 text-amber-300 border-amber-800/30",
+    "Testing": "bg-indigo-950/40 text-indigo-300 border-indigo-800/30",
   };
   return (
-    <span className={`px-2 py-0.5 rounded-full border text-xs font-medium ${map[status] || map["Not Started"]}`}>
+    <span className={`px-2.5 py-0.5 rounded-full border text-[11px] font-medium transition-all ${map[status] || map["Not Started"]}`}>
       {status}
     </span>
   );
@@ -232,10 +177,10 @@ const RiskBadge = ({ severity }) => {
     Medium: "bg-[#2E2E2E] text-[#E5E5E5] border-[#E5E5E5]/30",
     Low: "bg-[#000000] text-[#FFE600] border-[#FFE600]/30",
   };
-  return <span className={`px-2 py-0.5 rounded border text-xs font-mono font-bold ${map[severity]}`}>{severity}</span>;
+  return <span className={`px-2 py-0.5 rounded border text-xs font-mono font-bold ${map[severity] || map.Medium}`}>{severity}</span>;
 };
 
-const ProgressBar = ({ value, color = "indigo", animated = false }) => {
+const ProgressBar = ({ value, color = "indigo" }) => {
   const colors = {
     indigo: "bg-[#FFE600]", emerald: "bg-[#FFFFFF]",
     amber: "bg-[#E5E5E5]", rose: "bg-[#2E2E2E]",
@@ -252,28 +197,36 @@ const ProgressBar = ({ value, color = "indigo", animated = false }) => {
 };
 
 const Spinner = () => (
-  <div className="flex items-center gap-2 text-[#FFE600] text-sm">
+  <div className="flex items-center gap-2 text-[#FFE600] text-sm py-2">
     <div className="w-4 h-4 border-2 border-[#FFE600] border-t-transparent rounded-full animate-spin" />
     AI is thinking...
   </div>
 );
 
-const PM_STORAGE_KEY = "prismpm.team";
-
-const mergeTeamRoster = (storedTeam) => {
-  const baseRoster = Array.isArray(storedTeam) ? storedTeam : [];
-  const rosterIndex = new Map(baseRoster.map(member => [`${member.name}::${member.role}`, member]));
-
-  for (const seedMember of INITIAL_TEAM_MEMBERS) {
-    const key = `${seedMember.name}::${seedMember.role}`;
-    if (!rosterIndex.has(key)) {
-      baseRoster.push(seedMember);
-    }
-  }
-
-  return baseRoster.length > 0 ? baseRoster : INITIAL_TEAM_MEMBERS;
+const PulseRing = ({ progress, status, size = 80 }) => {
+  const r = size * 0.38;
+  const circ = 2 * Math.PI * r;
+  const dash = (progress / 100) * circ;
+  const statusColor = status === "On Track" ? EY.yellow : status === "At Risk" ? EY.lightGray : EY.white;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={EY.darkGray} strokeWidth="6" />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke={statusColor} strokeWidth="6" strokeLinecap="round"
+        strokeDasharray={`${dash} ${circ}`}
+        strokeDashoffset={circ * 0.25}
+        style={{ filter: `drop-shadow(0 0 6px ${statusColor})` }}
+      />
+      <text x={size / 2} y={size / 2 + 1} textAnchor="middle" dominantBaseline="middle"
+        fill={statusColor} fontSize={size * 0.22} fontFamily="JetBrains Mono, monospace" fontWeight="bold">
+        {Math.round(progress)}%
+      </text>
+    </svg>
+  );
 };
 
+// ─── Team Compatibility Calculations ─────────────────────────────────────────
 const scoreMember = (member) => {
   const baseScore = (member.skillStars || 0) * 20;
   const workloadAdjustment = Math.max(0, 12 - ((member.projects || 0) * 4));
@@ -298,1852 +251,2791 @@ const updateProjectCompatibility = (team, pmName, roster) => {
   if (!pmInRoster || !team || team.length === 0) {
     return 50;
   }
-  
   const teamMembersToScore = team.filter(m => m.name !== pmName);
   if (teamMembersToScore.length === 0) return 100;
-  
   const totalCompat = teamMembersToScore.reduce((sum, member) => {
     const rosterMember = roster.find(e => e.name === member.name && e.role === member.role) || member;
     return sum + calculateCompatibility(rosterMember, pmInRoster);
   }, 0);
-  
   return Math.round(totalCompat / teamMembersToScore.length);
 };
 
-const formatMemberScore = (member) => `${scoreMember(member)}/100`;
-
-// ─── Pulse Ring Component ────────────────────────────────────────────────────
-const PulseRing = ({ progress, status, size = 80 }) => {
-  const r = size * 0.38;
-  const circ = 2 * Math.PI * r;
-  const dash = (progress / 100) * circ;
-  const statusColor = status === "On Track" ? EY.yellow : status === "At Risk" ? EY.lightGray : EY.white;
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={EY.darkGray} strokeWidth="6" />
-      <circle
-        cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke={statusColor} strokeWidth="6" strokeLinecap="round"
-        strokeDasharray={`${dash} ${circ}`}
-        strokeDashoffset={circ * 0.25}
-        style={{ filter: `drop-shadow(0 0 6px ${statusColor})` }}
-      />
-      <text x={size / 2} y={size / 2 + 1} textAnchor="middle" dominantBaseline="middle"
-        fill={statusColor} fontSize={size * 0.22} fontFamily="JetBrains Mono, monospace" fontWeight="bold">
-        {progress}%
-      </text>
-    </svg>
-  );
+const mergeTeamRoster = (storedTeam) => {
+  const baseRoster = Array.isArray(storedTeam) ? storedTeam : [];
+  const rosterIndex = new Map(baseRoster.map(member => [`${member.name}::${member.role}`, member]));
+  for (const seedMember of INITIAL_TEAM_MEMBERS) {
+    const key = `${seedMember.name}::${seedMember.role}`;
+    if (!rosterIndex.has(key)) {
+      baseRoster.push(seedMember);
+    }
+  }
+  return baseRoster.length > 0 ? baseRoster : INITIAL_TEAM_MEMBERS;
 };
 
-// ─── Dashboard Tab ───────────────────────────────────────────────────────────
-function DashboardTab({ projects, onSelectProject }) {
-  const totalBudget = projects.reduce((a, p) => a + p.budget, 0);
-  const totalSpent = projects.reduce((a, p) => a + p.spent, 0);
-  const criticalRisks = projects.flatMap(p => p.risks.filter(r => r.severity === "Critical"));
-  const delayed = projects.flatMap(p => p.tasks.filter(t => t.status === "Delayed" || t.status === "Blocked"));
-
-  return (
-    <div className="space-y-6">
-      {/* KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Active Projects", value: projects.length, icon: "◈", color: "text-indigo-400" },
-          { label: "Critical Risks", value: criticalRisks.length, icon: "⚠", color: "text-rose-400" },
-          { label: "Delayed Tasks", value: delayed.length, icon: "⏱", color: "text-amber-400" },
-          { label: "Budget Utilisation", value: `${Math.round((totalSpent / totalBudget) * 100)}%`, icon: "💰", color: "text-emerald-400" },
-        ].map((k) => (
-          <div key={k.label} className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`text-lg ${k.color}`}>{k.icon}</span>
-              <span className="text-slate-400 text-xs uppercase tracking-widest">{k.label}</span>
-            </div>
-            <div className={`font-mono font-bold text-2xl ${k.color}`}>{k.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Project Cards */}
-      <div>
-        <h2 className="text-slate-300 font-semibold mb-3 text-sm uppercase tracking-widest">Portfolio Overview</h2>
-        <div className="grid gap-4">
-          {projects.map((p) => (
-            <div key={p.id}
-              className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5 cursor-pointer hover:border-indigo-500/50 hover:bg-slate-800/90 transition-all group"
-              onClick={() => onSelectProject(p)}>
-              <div className="flex items-start gap-4">
-                <PulseRing progress={p.progress} status={p.status} size={72} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-1 flex-wrap">
-                    <h3 className="font-semibold text-white text-base group-hover:text-indigo-300 transition-colors">{p.name}</h3>
-                    <StatusBadge status={p.status} />
-                  </div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-slate-400 text-xs">{p.client}</span>
-                    <span className="text-slate-600">·</span>
-                    <Stars count={p.clientStars} size="sm" color="amber" />
-                    <span className="text-slate-600">·</span>
-                    <span className="text-slate-400 text-xs">PM: {p.pm}</span>
-                  </div>
-                  <div className="flex items-center gap-6 text-xs text-slate-400">
-                    <span>Day {p.elapsed}/{p.plannedDays}</span>
-                    <span className={p.risks.some(r => r.severity === "Critical") ? "text-rose-400 font-medium" : ""}>
-                      {p.risks.length} risk{p.risks.length !== 1 ? "s" : ""}
-                      {p.risks.some(r => r.severity === "Critical") ? " ⚠ CRITICAL" : ""}
-                    </span>
-                    <span>Team compatibility: <span className={p.compatibilityScore >= 75 ? "text-emerald-400" : p.compatibilityScore >= 55 ? "text-amber-400" : "text-rose-400"} style={{ fontFamily: "monospace" }}>{p.compatibilityScore}%</span></span>
-                  </div>
-                </div>
-                <div className="text-right hidden sm:block">
-                  <div className="text-slate-400 text-xs mb-1">Budget</div>
-                  <div className="font-mono text-sm text-white">${(p.spent / 1000).toFixed(0)}k <span className="text-slate-500">/ ${(p.budget / 1000).toFixed(0)}k</span></div>
-                  <ProgressBar value={(p.spent / p.budget) * 100} />
-                </div>
-              </div>
-              {/* Risk mini-bar */}
-              {p.risks.some(r => r.severity === "Critical" || r.severity === "High") && (
-                <div className="mt-3 pt-3 border-t border-slate-700/50 flex flex-wrap gap-2">
-                  {p.risks.filter(r => r.severity === "Critical" || r.severity === "High").map(r => (
-                    <span key={r.id} className={`text-xs px-2 py-0.5 rounded ${r.severity === "Critical" ? "bg-rose-500/15 text-rose-400" : "bg-orange-500/15 text-orange-400"}`}>
-                      {r.severity === "Critical" ? "🔴" : "🟠"} {r.title}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Project Detail Tab ──────────────────────────────────────────────────────
-function ProjectDetail({ project, onBack, onDeleteProject }) {
-  const [aiSummary, setAiSummary] = useState(null);
-  const [aiTimeline, setAiTimeline] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [loadingTimeline, setLoadingTimeline] = useState(false);
-  const [activeSection, setActiveSection] = useState("overview");
-
-  const generateSummary = async () => {
-    setLoading(true);
-    try {
-      const result = await callGroq(
-        `Analyse this project and give an executive summary with key recommendations.
-Project: ${project.name}
-Client: ${project.client} (${project.clientStars}/5 star importance)
-Status: ${project.status}, Progress: ${project.progress}%
-Timeline: Day ${project.elapsed} of ${project.plannedDays}
-Risks: ${JSON.stringify(project.risks)}
-Tasks: ${JSON.stringify(project.tasks)}
-Budget: $${project.spent} spent of $${project.budget}
-Team compatibility: ${project.compatibilityScore}%
-
-Return JSON: { "summary": "string (3-4 sentences)", "topRecommendations": ["string","string","string"], "healthScore": number 0-100, "immediateActions": ["string","string"] }`,
-      );
-      setAiSummary(result);
-    } catch (e) { setAiSummary({ summary: "Could not generate summary.", topRecommendations: [], healthScore: 50, immediateActions: [] }); }
-    setLoading(false);
-  };
-
-  const generateTimeline = async () => {
-    setLoadingTimeline(true);
-    try {
-      const result = await callGroq(
-        `Predict the timeline outcome for this project.
-Project: ${project.name}, Status: ${project.status}
-Planned: ${project.plannedDays} days, Elapsed: ${project.elapsed} days, Progress: ${project.progress}%
-Delayed tasks: ${project.tasks.filter(t => t.status === "Delayed" || t.status === "Blocked").length}
-Critical risks: ${project.risks.filter(r => r.severity === "Critical").length}
-High risks: ${project.risks.filter(r => r.severity === "High").length}
-
-Return JSON: { "predictedTotalDays": number, "delayDays": number, "confidence": number 0-100, "completionDate": "string", "keyDelayFactors": ["string","string"], "mitigationSuggestions": ["string","string","string"], "optimisticDays": number, "pessimisticDays": number }`,
-      );
-      setAiTimeline(result);
-    } catch (e) { setAiTimeline(null); }
-    setLoadingTimeline(false);
-  };
-
-  const sections = ["overview", "tasks", "risks", "team", "ai insights"];
-
-  return (
-    <div className="space-y-5">
-      <div className="flex justify-between items-center">
-        <button onClick={onBack} className="flex items-center gap-2 text-slate-400 hover:text-indigo-400 text-sm transition-colors">
-          ← Back to Dashboard
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (confirm(`Are you sure you want to delete the project "${project.name}"? This action cannot be undone.`)) {
-              onDeleteProject(project.id);
-            }
-          }}
-          className="px-3 py-1.5 bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-red-400 hover:text-white rounded-lg text-xs transition-colors"
-        >
-          🗑 Delete Project
-        </button>
-      </div>
-
-      {/* Header */}
-      <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-6">
-        <div className="flex items-start gap-5 flex-wrap">
-          <PulseRing progress={project.progress} status={project.status} size={90} />
-          <div className="flex-1">
-            <div className="flex items-center gap-3 flex-wrap mb-2">
-              <h2 className="text-xl font-bold text-white">{project.name}</h2>
-              <StatusBadge status={project.status} />
-            </div>
-            <p className="text-slate-400 text-sm mb-3">{project.description}</p>
-            <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-              <span className="text-slate-400">Client: <span className="text-white">{project.client}</span> <Stars count={project.clientStars} size="sm" /></span>
-              <span className="text-slate-400">PM: <span className="text-white">{project.pm}</span></span>
-              <span className="text-slate-400">BA: <span className="text-white">{project.ba}</span></span>
-              <span className="text-slate-400">Type: <span className="text-indigo-300">{project.type}</span></span>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-center min-w-fit">
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <div className="text-slate-400 text-xs mb-1">Timeline</div>
-              <div className="font-mono text-sm text-white">Day {project.elapsed}<span className="text-slate-500">/{project.plannedDays}</span></div>
-            </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <div className="text-slate-400 text-xs mb-1">Budget Used</div>
-              <div className="font-mono text-sm text-white">{Math.round((project.spent / project.budget) * 100)}%</div>
-            </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <div className="text-slate-400 text-xs mb-1">Team Compat.</div>
-              <div className={`font-mono text-sm font-bold ${project.compatibilityScore >= 75 ? "text-emerald-400" : project.compatibilityScore >= 55 ? "text-amber-400" : "text-rose-400"}`}>{project.compatibilityScore}%</div>
-            </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <div className="text-slate-400 text-xs mb-1">Risks</div>
-              <div className={`font-mono text-sm font-bold ${project.risks.some(r => r.severity === "Critical") ? "text-rose-400" : "text-amber-400"}`}>{project.risks.length}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Section Nav */}
-      <div className="flex gap-1 bg-slate-800/40 border border-slate-700/40 p-1 rounded-xl overflow-x-auto">
-        {sections.map(s => (
-          <button key={s} onClick={() => setActiveSection(s)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize whitespace-nowrap transition-all ${activeSection === s ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"}`}>
-            {s}
-          </button>
-        ))}
-      </div>
-
-      {/* OVERVIEW */}
-      {activeSection === "overview" && (
-        <div className="space-y-4">
-          <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5">
-            <h3 className="text-slate-300 text-sm font-semibold mb-4 uppercase tracking-widest">Task Summary</h3>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-              {["Done", "In Progress", "Not Started", "Delayed", "Blocked"].map(s => {
-                const count = project.tasks.filter(t => t.status === s).length;
-                return (
-                  <div key={s} className="text-center">
-                    <div className={`font-mono font-bold text-xl ${s === "Blocked" ? "text-rose-400" : s === "Delayed" ? "text-amber-400" : s === "Done" ? "text-emerald-400" : s === "In Progress" ? "text-indigo-400" : "text-slate-400"}`}>{count}</div>
-                    <div className="text-slate-500 text-xs">{s}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Budget bar */}
-          <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5">
-            <h3 className="text-slate-300 text-sm font-semibold mb-3 uppercase tracking-widest">Budget Health</h3>
-            <div className="flex justify-between text-sm text-slate-400 mb-2">
-              <span>Spent: <span className="text-white font-mono">${project.spent.toLocaleString()}</span></span>
-              <span>Total: <span className="text-white font-mono">${project.budget.toLocaleString()}</span></span>
-            </div>
-            <ProgressBar value={(project.spent / project.budget) * 100} />
-            <div className="mt-2 text-xs text-slate-500">
-              Remaining: ${(project.budget - project.spent).toLocaleString()} · {Math.round(((project.budget - project.spent) / project.budget) * 100)}% of budget
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TASKS */}
-      {activeSection === "tasks" && (
-        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl overflow-hidden">
-          <div className="p-4 border-b border-slate-700/50">
-            <h3 className="text-slate-300 text-sm font-semibold uppercase tracking-widest">Task Tracker</h3>
-          </div>
-          <div className="divide-y divide-slate-700/30">
-            {project.tasks.map(task => (
-              <div key={task.id} className={`flex items-center gap-4 p-4 hover:bg-slate-700/20 transition-colors ${(task.status === "Delayed" || task.status === "Blocked") ? "bg-rose-500/5" : ""}`}>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-white text-sm font-medium">{task.name}</span>
-                    {(task.status === "Delayed" || task.status === "Blocked") && (
-                      <span className="text-rose-400 text-xs font-bold animate-pulse">⚠ TIMELINE RISK</span>
-                    )}
-                  </div>
-                  <div className="text-slate-500 text-xs">Assignee: {task.assignee} · Due: {task.due}</div>
-                </div>
-                <StatusBadge status={task.status} />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* RISKS */}
-      {activeSection === "risks" && (
-        <div className="space-y-3">
-          {project.risks.sort((a, b) => {
-            const order = { Critical: 0, High: 1, Medium: 2, Low: 3 };
-            return order[a.severity] - order[b.severity];
-          }).map(risk => (
-            <div key={risk.id}
-              className={`bg-slate-800/60 border rounded-xl p-4 ${risk.severity === "Critical" ? "border-rose-500/40 bg-rose-500/5" : risk.severity === "High" ? "border-orange-500/30" : "border-slate-700/50"}`}>
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">{risk.severity === "Critical" ? "🔴" : risk.severity === "High" ? "🟠" : risk.severity === "Medium" ? "🟡" : "🔵"}</div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-white font-semibold text-sm">{risk.title}</span>
-                    <RiskBadge severity={risk.severity} />
-                    <span className="text-slate-500 text-xs border border-slate-600 px-2 py-0.5 rounded">{risk.category}</span>
-                  </div>
-                  <div className="text-slate-400 text-sm mb-2">
-                    Impact: <span className={risk.severity === "Critical" ? "text-rose-300" : "text-amber-300"}>{risk.impact}</span>
-                  </div>
-                  {risk.severity === "Critical" || risk.severity === "High" ? (
-                    <div className="text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded px-2 py-1 inline-block">
-                      ⚠ THIS RISK MAY AFFECT PROJECT COMPLETION TIMELINE
-                    </div>
-                  ) : null}
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="text-slate-500 text-xs">Probability:</span>
-                    <div className="flex-1 max-w-32 bg-slate-700/50 rounded-full h-1.5">
-                      <div className={`h-1.5 rounded-full ${risk.probability >= 60 ? "bg-rose-500" : risk.probability >= 40 ? "bg-amber-500" : "bg-blue-500"}`}
-                        style={{ width: `${risk.probability}%` }} />
-                    </div>
-                    <span className="font-mono text-xs text-slate-400">{risk.probability}%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* TEAM */}
-      {activeSection === "team" && (
-        <div className="space-y-4">
-          <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-slate-300 text-sm font-semibold uppercase tracking-widest">Team Compatibility Score</h3>
-              <div className={`font-mono font-bold text-2xl ${project.compatibilityScore >= 75 ? "text-emerald-400" : project.compatibilityScore >= 55 ? "text-amber-400" : "text-rose-400"}`}>
-                {project.compatibilityScore}%
-              </div>
-            </div>
-            <ProgressBar value={project.compatibilityScore} />
-            <p className="text-slate-500 text-xs mt-2">
-              {project.compatibilityScore >= 75 ? "Strong team alignment. Skillsets complement project requirements well." :
-                project.compatibilityScore >= 55 ? "Moderate compatibility. Some skill gaps identified — consider upskilling or adding resources." :
-                  "Low compatibility score. Risk of delivery issues due to skill/role misalignment."}
-            </p>
-          </div>
-          <div className="grid gap-3">
-            {project.team.map((member, i) => (
-              <div key={i} className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-4 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-sm">
-                  {member.name.split(" ").map(n => n[0]).join("")}
-                </div>
-                <div className="flex-1">
-                  <div className="text-white font-medium text-sm">{member.name}</div>
-                  <div className="text-slate-400 text-xs">{member.role} · {member.specialty}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-slate-400 text-xs mb-0.5">Skill Rating</div>
-                  <Stars count={member.skillStars} size="sm" color="indigo" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* AI INSIGHTS */}
-      {activeSection === "ai insights" && (
-        <div className="space-y-4">
-          {/* AI Summary */}
-          <div className="bg-slate-800/60 border border-indigo-500/20 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-slate-300 text-sm font-semibold uppercase tracking-widest flex items-center gap-2">
-                <span className="text-indigo-400">✦</span> AI Project Summary
-              </h3>
-              {!aiSummary && !loading && (
-                <button onClick={generateSummary}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition-colors">
-                  Generate
-                </button>
-              )}
-            </div>
-            {loading && <Spinner />}
-            {aiSummary && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-slate-400 text-xs">Health Score:</span>
-                  <span className={`font-mono font-bold text-lg ${aiSummary.healthScore >= 70 ? "text-emerald-400" : aiSummary.healthScore >= 50 ? "text-amber-400" : "text-rose-400"}`}>{aiSummary.healthScore}/100</span>
-                </div>
-                <p className="text-slate-300 text-sm leading-relaxed">{aiSummary.summary}</p>
-                {aiSummary.immediateActions?.length > 0 && (
-                  <div>
-                    <div className="text-rose-400 text-xs font-bold uppercase mb-2">Immediate Actions Required</div>
-                    <ul className="space-y-1">
-                      {aiSummary.immediateActions.map((a, i) => (
-                        <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-rose-400 mt-0.5">→</span>{a}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {aiSummary.topRecommendations?.length > 0 && (
-                  <div>
-                    <div className="text-indigo-400 text-xs font-bold uppercase mb-2">Recommendations</div>
-                    <ul className="space-y-1">
-                      {aiSummary.topRecommendations.map((r, i) => (
-                        <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-indigo-400 mt-0.5">✦</span>{r}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* AI Timeline Prediction */}
-          <div className="bg-slate-800/60 border border-amber-500/20 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-slate-300 text-sm font-semibold uppercase tracking-widest flex items-center gap-2">
-                <span className="text-amber-400">⏱</span> AI Timeline Prediction
-              </h3>
-              {!aiTimeline && !loadingTimeline && (
-                <button onClick={generateTimeline}
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-lg transition-colors">
-                  Predict
-                </button>
-              )}
-            </div>
-            {loadingTimeline && <Spinner />}
-            {aiTimeline && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-slate-700/40 rounded-lg p-3">
-                    <div className="text-slate-400 text-xs mb-1">Planned</div>
-                    <div className="font-mono font-bold text-white text-lg">{project.plannedDays}d</div>
-                  </div>
-                  <div className="bg-slate-700/40 rounded-lg p-3">
-                    <div className="text-slate-400 text-xs mb-1">Predicted</div>
-                    <div className={`font-mono font-bold text-lg ${aiTimeline.delayDays > 0 ? "text-rose-400" : "text-emerald-400"}`}>{aiTimeline.predictedTotalDays}d</div>
-                  </div>
-                  <div className="bg-slate-700/40 rounded-lg p-3">
-                    <div className="text-slate-400 text-xs mb-1">Delay</div>
-                    <div className={`font-mono font-bold text-lg ${aiTimeline.delayDays > 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                      {aiTimeline.delayDays > 0 ? `+${aiTimeline.delayDays}d` : "On time"}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Optimistic: <span className="font-mono text-emerald-400">{aiTimeline.optimisticDays}d</span></span>
-                  <span>Confidence: <span className="font-mono text-indigo-400">{aiTimeline.confidence}%</span></span>
-                  <span>Pessimistic: <span className="font-mono text-rose-400">{aiTimeline.pessimisticDays}d</span></span>
-                </div>
-                <div className="text-xs text-slate-400">Predicted completion: <span className="text-white">{aiTimeline.completionDate}</span></div>
-                {aiTimeline.keyDelayFactors?.length > 0 && (
-                  <div>
-                    <div className="text-amber-400 text-xs font-bold uppercase mb-2">Key Delay Factors</div>
-                    <ul className="space-y-1">
-                      {aiTimeline.keyDelayFactors.map((f, i) => (
-                        <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-amber-400">⚠</span>{f}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {aiTimeline.mitigationSuggestions?.length > 0 && (
-                  <div>
-                    <div className="text-emerald-400 text-xs font-bold uppercase mb-2">Mitigation Suggestions</div>
-                    <ul className="space-y-1">
-                      {aiTimeline.mitigationSuggestions.map((s, i) => (
-                        <li key={i} className="text-sm text-slate-300 flex gap-2"><span className="text-emerald-400">✓</span>{s}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Team Tab ────────────────────────────────────────────────────────────────
-function ProjectCreateForm({ projectManagers, businessAnalysts, onSubmit }) {
-  const [form, setForm] = useState({
-    name: "",
-    client: "",
-    pmName: projectManagers[0]?.name || "",
-    baName: businessAnalysts[0]?.name || "",
-    type: "Enterprise Software",
-    status: "On Track",
-    plannedDays: 90,
-    budget: 150000,
-    description: "",
-    clientStars: 3,
-  });
-
-  const updateField = (field, value) => setForm(current => ({ ...current, [field]: value }));
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (!form.name.trim() || !form.client.trim() || !form.pmName) return;
-
-    const pmMember = projectManagers.find(m => m.name === form.pmName);
-    const baMember = businessAnalysts.find(m => m.name === form.baName);
-
-    const initialTeam = [];
-    if (pmMember) {
-      initialTeam.push({
-        name: pmMember.name,
-        role: "PM",
-        skillStars: pmMember.skillStars,
-        specialty: pmMember.specialty,
-      });
-    }
-    if (baMember && form.baName) {
-      initialTeam.push({
-        name: baMember.name,
-        role: "BA",
-        skillStars: baMember.skillStars,
-        specialty: baMember.specialty,
-      });
-    }
-
-    const newProject = {
-      id: Date.now(),
-      name: form.name.trim(),
-      client: form.client.trim(),
-      clientStars: Math.max(1, Math.min(5, Number(form.clientStars) || 3)),
-      pm: form.pmName,
-      ba: form.baName || "TBD",
-      type: form.type.trim(),
-      status: form.status,
-      progress: 0,
-      plannedDays: Math.max(1, Number(form.plannedDays) || 60),
-      elapsed: 0,
-      description: form.description.trim() || "New project created in the team panel.",
-      risks: [],
-      tasks: [],
-      team: initialTeam,
-      compatibilityScore: 100,
-      budget: Math.max(0, Number(form.budget) || 100000),
-      spent: 0,
-    };
-
-    onSubmit(newProject);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid md:grid-cols-2 gap-3">
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Project name</div>
-          <input value={form.name} onChange={e => updateField("name", e.target.value)} placeholder="Example: FinanceFlow Overhaul" className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600]" required />
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Client company</div>
-          <input value={form.client} onChange={e => updateField("client", e.target.value)} placeholder="Example: NexaBank Ltd" className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600]" required />
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Project manager</div>
-          <select value={form.pmName} onChange={e => updateField("pmName", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]" required>
-            <option value="" disabled>Select PM</option>
-            {projectManagers.map(pm => (
-              <option key={pm.name} value={pm.name}>{pm.name} ({pm.specialty})</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Business analyst</div>
-          <select value={form.baName} onChange={e => updateField("baName", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]">
-            <option value="">No BA Assigned</option>
-            {businessAnalysts.map(ba => (
-              <option key={ba.name} value={ba.name}>{ba.name} ({ba.specialty})</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Project type</div>
-          <input value={form.type} onChange={e => updateField("type", e.target.value)} placeholder="Example: Mobile App" className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600]" />
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Status</div>
-          <select value={form.status} onChange={e => updateField("status", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]">
-            <option>On Track</option>
-            <option>At Risk</option>
-            <option>Behind</option>
-          </select>
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Client priority (1-5)</div>
-          <input type="number" min="1" max="5" value={form.clientStars} onChange={e => updateField("clientStars", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]" />
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Total budget ($)</div>
-          <input type="number" min="0" value={form.budget} onChange={e => updateField("budget", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]" />
-        </div>
-        <div>
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Planned duration (days)</div>
-          <input type="number" min="1" value={form.plannedDays} onChange={e => updateField("plannedDays", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]" />
-        </div>
-      </div>
-      <div>
-        <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Short description</div>
-        <textarea value={form.description} onChange={e => updateField("description", e.target.value)} rows={2} placeholder="Brief summary of project scope..." className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600] resize-none" />
-      </div>
-      <button type="submit" className="w-full py-2.5 bg-[#FFE600] hover:bg-[#FFFFFF] text-[#000000] font-semibold rounded-lg transition-colors text-sm">
-        Create Project & Start Allocating
-      </button>
-    </form>
-  );
-}
-
-function ProjectAllocationManager({ project, roster, onAddMemberToProject, onDropMemberFromProject, onDeleteProject }) {
-  const pmObj = roster.find(e => e.role === "PM" && e.name === project.pm) || { name: project.pm, specialty: "" };
-  const assignedTeam = project.team || [];
-  const unassignedEmployees = roster.filter(emp => 
-    !assignedTeam.some(m => m.name === emp.name && m.role === emp.role)
-  );
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState("All");
-
-  const roles = ["All", "BA", "Lead Dev", "iOS Dev", "Android Dev", "QA", "Architect", "Security"];
-
-  const filteredRoster = unassignedEmployees.filter(emp => {
-    const matchesSearch = emp.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          emp.specialty.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = roleFilter === "All" || emp.role === roleFilter;
-    return matchesSearch && matchesRole;
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-[#000000] border border-[#E5E5E5]/10 rounded-xl p-4 flex flex-wrap justify-between items-center gap-4">
-        <div>
-          <div className="text-white font-semibold text-sm">{project.name}</div>
-          <div className="text-[#E5E5E5] text-xs">PM: {project.pm} · BA: {project.ba}</div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <div className="text-[#E5E5E5] text-xs">Current Compatibility</div>
-            <div className="font-mono text-lg font-bold text-[#FFE600]">{project.compatibilityScore}%</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (confirm(`Are you sure you want to delete the project "${project.name}"? This action cannot be undone.`)) {
-                onDeleteProject(project.id);
-              }
-            }}
-            className="px-2.5 py-1.5 bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-red-400 hover:text-white rounded-lg text-xs transition-colors flex-shrink-0"
-          >
-            🗑 Delete Project
-          </button>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-4 space-y-3">
-          <h4 className="text-white font-semibold text-sm flex items-center justify-between border-b border-[#E5E5E5]/10 pb-2">
-            <span>Project Team ({assignedTeam.length})</span>
-            <span className="text-xs text-[#E5E5E5] font-normal">Active Members</span>
-          </h4>
-          
-          {assignedTeam.length > 0 ? (
-            <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-              {assignedTeam.map((member, i) => {
-                const isPmOrBa = member.role === "PM" || (member.name === project.ba && member.role === "BA");
-                
-                return (
-                  <div key={i} className="bg-[#000000] border border-[#E5E5E5]/10 rounded-lg p-3 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-white font-medium text-xs flex items-center gap-1.5 flex-wrap">
-                        {member.name}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2E2E2E] text-[#E5E5E5]">{member.role}</span>
-                      </div>
-                      <div className="text-[#E5E5E5]/80 text-[10px]">{member.specialty}</div>
-                    </div>
-                    
-                    {isPmOrBa ? (
-                      <span className="text-[10px] text-[#FFE600]/60 font-semibold px-2 py-1">Core Leader</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onDropMemberFromProject(member, project.id)}
-                        className="px-2 py-1 bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded text-xs transition-colors"
-                      >
-                        Drop
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-[#E5E5E5] text-xs border border-dashed border-[#E5E5E5]/15 rounded-lg p-4 text-center">
-              No team members assigned yet.
-            </div>
-          )}
-        </div>
-
-        <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-4 space-y-3">
-          <h4 className="text-white font-semibold text-sm border-b border-[#E5E5E5]/10 pb-2">
-            Available Roster
-          </h4>
-
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="bg-[#000000] border border-[#E5E5E5]/20 rounded px-2 py-1 text-white text-xs placeholder-[#E5E5E5]/40 focus:outline-none focus:border-[#FFE600]"
-            />
-            <select
-              value={roleFilter}
-              onChange={e => setRoleFilter(e.target.value)}
-              className="bg-[#000000] border border-[#E5E5E5]/20 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#FFE600]"
-            >
-              {roles.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
-
-          <div className="space-y-2 max-h-[290px] overflow-y-auto pr-1">
-            {filteredRoster.length > 0 ? (
-              filteredRoster.map((emp) => {
-                const compat = calculateCompatibility(emp, pmObj);
-                return (
-                  <div key={`${emp.name}::${emp.role}`} className="bg-[#000000] border border-[#E5E5E5]/10 rounded-lg p-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-white font-medium text-xs flex items-center gap-1.5 flex-wrap">
-                        {emp.name}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2E2E2E] text-[#E5E5E5]">{emp.role}</span>
-                      </div>
-                      <div className="text-[#E5E5E5]/80 text-[10px] truncate">{emp.specialty}</div>
-                      <div className="text-[10px] text-[#E5E5E5]/50 flex gap-2">
-                        <span>Projects: {emp.projects}</span>
-                        <span>·</span>
-                        <span className={compat >= 75 ? "text-emerald-400" : compat >= 55 ? "text-amber-400" : "text-rose-400"}>Compat: {compat}%</span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onAddMemberToProject(emp, project.id)}
-                      className="px-2 py-1 bg-[#FFE600]/15 hover:bg-[#FFE600] text-[#FFE600] hover:text-[#000000] border border-[#FFE600]/30 rounded text-xs transition-colors flex-shrink-0"
-                    >
-                      Add
-                    </button>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="text-[#E5E5E5] text-xs text-center py-4">
-                No matching members found.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TeamTab({
-  employees,
-  onAddMember,
-  projects,
-  onAddMemberToProject,
-  onDropMemberFromProject,
-  onCreateProject,
-  onDeleteProject
-}) {
-  const roster = Array.isArray(employees) ? employees : [];
-  const [filter, setFilter] = useState("All");
-  const [selectedRole, setSelectedRole] = useState("");
-  const [selectedMemberName, setSelectedMemberName] = useState("");
-  const [form, setForm] = useState(() => ({
-    name: "",
-    role: "BA",
-    specialty: "",
-    assignedPm: roster.find(e => e.role === "PM")?.name || "",
-    skillStars: 4,
-    projects: 1,
-    available: true,
-  }));
-
-  const projectManagers = roster.filter(e => e.role === "PM");
-  const businessAnalysts = roster.filter(e => e.role === "BA");
-  const teamRoles = ["BA", "Lead Dev", "iOS Dev", "Android Dev", "QA", "Architect", "Security"];
-  const visibleRoles = ["All", ...teamRoles];
-  const browsableRoles = teamRoles.filter(role => roster.some(member => member.role === role));
-  const roleMembers = selectedRole ? roster.filter(member => member.role === selectedRole) : [];
-  const selectedMember = roleMembers.find(member => member.name === selectedMemberName) || null;
-  const totalMembers = roster.filter(e => e.role !== "PM").length;
-
-  const [selectedAllocationProjectId, setSelectedAllocationProjectId] = useState("");
-  const [showProjectCreate, setShowProjectCreate] = useState(false);
-
-  const handleLocalDeleteProject = (projectId) => {
-    onDeleteProject(projectId);
-    setSelectedAllocationProjectId("");
-  };
-
-  useEffect(() => {
-    if (!selectedRole) {
-      if (selectedMemberName) setSelectedMemberName("");
-      return;
-    }
-
-    const nextRoleMembers = roster.filter(member => member.role === selectedRole);
-    if (!nextRoleMembers.some(member => member.name === selectedMemberName)) {
-      setSelectedMemberName(nextRoleMembers[0]?.name || "");
-    }
-  }, [roster, selectedRole, selectedMemberName]);
-
-  const handleFormChange = (field, value) => setForm(current => ({ ...current, [field]: value }));
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (!form.name.trim() || !form.assignedPm) return;
-
-    onAddMember({
-      id: Date.now(),
-      name: form.name.trim(),
-      role: form.role,
-      specialty: form.specialty.trim() || form.role,
-      assignedPm: form.assignedPm,
-      skillStars: Math.max(1, Math.min(5, Number(form.skillStars) || 4)),
-      projects: Math.max(0, Number(form.projects) || 0),
-      available: Boolean(form.available),
-    });
-
-    setForm({
-      name: "",
-      role: "BA",
-      specialty: "",
-      assignedPm: projectManagers[0]?.name || "",
-      skillStars: 4,
-      projects: 1,
-      available: true,
-    });
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <h3 className="text-white font-semibold text-base">Project Team Allocation</h3>
-            <p className="text-[#E5E5E5] text-sm">Select an active project to add or drop team members, or create a new project.</p>
-          </div>
-          <div className="text-xs text-[#E5E5E5] uppercase tracking-widest text-right">
-            Manage Assignments
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-3">
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Select Project</div>
-            <select
-              value={selectedAllocationProjectId}
-              onChange={e => {
-                const val = e.target.value;
-                setSelectedAllocationProjectId(val);
-                if (val === "new") {
-                  setShowProjectCreate(true);
-                } else {
-                  setShowProjectCreate(false);
-                }
-              }}
-              className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]"
-            >
-              <option value="">-- Choose an Active Project --</option>
-              <option value="new" className="text-[#FFE600] font-semibold">+ Create New Project...</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({p.client})</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {showProjectCreate && (
-          <div className="border-t border-[#E5E5E5]/10 pt-4 mt-2">
-            <ProjectCreateForm
-              projectManagers={projectManagers}
-              businessAnalysts={businessAnalysts}
-              onSubmit={(newProjectData) => {
-                onCreateProject(newProjectData);
-                setSelectedAllocationProjectId(String(newProjectData.id));
-                setShowProjectCreate(false);
-              }}
-            />
-          </div>
-        )}
-
-        {selectedAllocationProjectId && selectedAllocationProjectId !== "new" && (
-          <div className="border-t border-[#E5E5E5]/10 pt-4 mt-2 space-y-4">
-            {(() => {
-              const activeProj = projects.find(p => p.id === Number(selectedAllocationProjectId));
-              if (!activeProj) return null;
-              
-              return (
-                <ProjectAllocationManager
-                  project={activeProj}
-                  roster={roster}
-                  onAddMemberToProject={onAddMemberToProject}
-                  onDropMemberFromProject={onDropMemberFromProject}
-                  onDeleteProject={handleLocalDeleteProject}
-                />
-              );
-            })()}
-          </div>
-        )}
-      </div>
-
-      <form onSubmit={handleSubmit} className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <h3 className="text-white font-semibold text-base">Add New Team Member to Roster</h3>
-            <p className="text-[#E5E5E5] text-sm">Choose a project manager first, then add the team member under that manager.</p>
-          </div>
-          <div className="text-xs text-[#E5E5E5] uppercase tracking-widest">PM assignment required</div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-3">
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Project manager</div>
-            <select value={form.assignedPm} onChange={e => handleFormChange("assignedPm", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]">
-              <option value="" disabled>Select a PM</option>
-              {projectManagers.map(pm => (
-                <option key={pm.name} value={pm.name}>{pm.name} · {pm.specialty}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Team member name</div>
-            <input value={form.name} onChange={e => handleFormChange("name", e.target.value)} placeholder="Example: Jordan Smith" className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600]" />
-          </div>
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Role</div>
-            <select value={form.role} onChange={e => handleFormChange("role", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]">
-              {teamRoles.map(role => <option key={role} value={role}>{role}</option>)}
-            </select>
-          </div>
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Specialty</div>
-            <input value={form.specialty} onChange={e => handleFormChange("specialty", e.target.value)} placeholder="Example: Automation / E2E" className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600]" />
-          </div>
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Skill rating (1-5)</div>
-            <input type="number" min="1" max="5" value={form.skillStars} onChange={e => handleFormChange("skillStars", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]" />
-          </div>
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Active projects</div>
-            <input type="number" min="0" value={form.projects} onChange={e => handleFormChange("projects", e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]" />
-          </div>
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Availability</div>
-            <select value={form.available ? "yes" : "no"} onChange={e => handleFormChange("available", e.target.value === "yes")} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]">
-              <option value="yes">Available</option>
-              <option value="no">Allocated</option>
-            </select>
-          </div>
-        </div>
-
-        <button type="submit" disabled={!projectManagers.length} className="w-full py-2.5 bg-[#FFE600] hover:bg-[#FFFFFF] disabled:opacity-50 disabled:cursor-not-allowed text-[#000000] font-semibold rounded-lg transition-colors text-sm">
-          Add Team Member to Roster
-        </button>
-      </form>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-4">
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1">Project managers</div>
-          <div className="font-mono font-bold text-2xl text-[#FFE600]">{projectManagers.length}</div>
-        </div>
-        <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-4">
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1">Team members</div>
-          <div className="font-mono font-bold text-2xl text-[#FFFFFF]">{totalMembers}</div>
-        </div>
-        <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-4">
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1">Allocated members</div>
-          <div className="font-mono font-bold text-2xl text-[#E5E5E5]">{roster.filter(e => e.role !== "PM" && e.assignedPm).length}</div>
-        </div>
-        <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-4">
-          <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1">Roles</div>
-          <div className="font-mono font-bold text-2xl text-[#FFE600]">{visibleRoles.length - 1}</div>
-        </div>
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        {visibleRoles.map(role => (
-          <button key={role} onClick={() => setFilter(role)} className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${filter === role ? "bg-[#FFE600] text-[#000000]" : "bg-[#2E2E2E] text-[#E5E5E5] hover:text-white"}`}>
-            {role}
-          </button>
-        ))}
-      </div>
-
-      <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <h3 className="text-white font-semibold text-base">Browse Team by Role</h3>
-            <p className="text-[#E5E5E5] text-sm">Pick a role first, then choose a team member from that role.</p>
-          </div>
-          <div className="text-xs text-[#E5E5E5] uppercase tracking-widest">Role linked dropdowns</div>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-3">
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Role</div>
-            <select value={selectedRole} onChange={e => setSelectedRole(e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]">
-              <option value="" disabled>Select a role</option>
-              {browsableRoles.map(role => <option key={role} value={role}>{role}</option>)}
-            </select>
-          </div>
-          <div>
-            <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5">Team member</div>
-            <select value={selectedMember?.name || ""} onChange={e => setSelectedMemberName(e.target.value)} className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600]" disabled={!roleMembers.length}>
-              {roleMembers.map(member => <option key={member.name} value={member.name}>{member.name}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {selectedMember ? (
-          <div className="grid md:grid-cols-[1.4fr_0.9fr] gap-4">
-            <div className="bg-[#000000] border border-[#E5E5E5]/10 rounded-xl p-4 flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full border flex items-center justify-center font-bold text-sm flex-shrink-0 ${selectedMember.available ? "bg-[#FFE600]/15 border-[#FFE600]/30 text-[#FFE600]" : "bg-[#2E2E2E] border-[#E5E5E5]/20 text-[#FFFFFF]"}`}>
-                {selectedMember.name.split(" ").map(n => n[0]).join("")}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-white font-medium text-sm">{selectedMember.name}</span>
-                  <span className="text-xs px-2 py-0.5 rounded-full border bg-[#2E2E2E] border-[#E5E5E5]/20 text-[#E5E5E5]">{selectedMember.role}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full border ${selectedMember.available ? "bg-[#FFE600]/15 border-[#FFE600]/30 text-[#FFE600]" : "bg-[#000000] border-[#E5E5E5]/20 text-[#E5E5E5]"}`}>
-                    {selectedMember.available ? "Available" : "Allocated"}
-                  </span>
-                </div>
-                <div className="text-[#E5E5E5] text-xs mt-0.5">{selectedMember.specialty}</div>
-                <div className="text-[#E5E5E5]/70 text-xs">Active on {selectedMember.projects} project{selectedMember.projects !== 1 ? "s" : ""}</div>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <div className="bg-[#000000] border border-[#E5E5E5]/10 rounded-xl p-3">
-                <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1">Skill rating</div>
-                <Stars count={selectedMember.skillStars} size="sm" color="indigo" />
-                <div className="font-mono text-xs text-[#E5E5E5]/70">{selectedMember.skillStars}/5</div>
-              </div>
-              <div className="bg-[#000000] border border-[#E5E5E5]/10 rounded-xl p-3">
-                <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1">Member score</div>
-                <div className="font-mono text-xl text-[#FFE600]">{scoreMember(selectedMember)}/100</div>
-              </div>
-              <div className="bg-[#000000] border border-[#E5E5E5]/10 rounded-xl p-3">
-                <div className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1">PM compatibility</div>
-                <div className="font-mono text-xl text-[#FFFFFF]">{calculateCompatibility(selectedMember, projectManagers.find(pm => pm.name === (selectedMember.assignedPm || projectManagers[0]?.name)) || projectManagers[0] || { name: "", specialty: "" })}%</div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-[#E5E5E5] text-sm border border-dashed border-[#E5E5E5]/20 rounded-lg p-4">
-            No team members found for the selected role.
-          </div>
-        )}
-
-        <div className="grid gap-2">
-          {roleMembers.map(member => (
-            <button
-              key={member.name}
-              type="button"
-              onClick={() => setSelectedMemberName(member.name)}
-              className={`text-left bg-[#000000] border rounded-xl p-4 transition-colors ${selectedMember?.name === member.name ? "border-[#FFE600]/50" : "border-[#E5E5E5]/10 hover:border-[#E5E5E5]/30"}`}
-            >
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <div className="text-white text-sm font-medium">{member.name}</div>
-                  <div className="text-[#E5E5E5] text-xs">PM: {member.assignedPm || "Unassigned"}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[#E5E5E5] text-xs">Score {formatMemberScore(member)}</div>
-                  <div className="text-[#FFE600] text-xs">Compat. {calculateCompatibility(member, projectManagers.find(pm => pm.name === member.assignedPm) || projectManagers[0] || { name: "", specialty: "" })}%</div>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── BRD Generator Tab ───────────────────────────────────────────────────────
-function BRDTab() {
-  const [form, setForm] = useState({ clientName: "", requirements: "", projectType: "Enterprise Software" });
-  const [brd, setBrd] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("prismpm.groqApiKey") || "");
-  const [apiError, setApiError] = useState("");
-
-  const projectTypes = ["Enterprise Software", "Mobile App", "Healthcare SaaS", "E-Commerce", "Data Analytics", "API Integration", "CRM / ERP", "Cloud Migration", "Custom Portal"];
-
-  useEffect(() => {
-    try {
-      if (apiKey.trim()) {
-        localStorage.setItem("prismpm.groqApiKey", apiKey.trim());
-      } else {
-        localStorage.removeItem("prismpm.groqApiKey");
-      }
-    } catch {
-      // Ignore storage failures.
-    }
-  }, [apiKey]);
-
-  const generateBRD = async () => {
-    if (!form.clientName || !form.requirements) return;
-    setLoading(true);
-    setBrd(null);
-    setApiError("");
-    try {
-      const result = await callGroq(
-        `Generate a professional Business Requirements Document (BRD) for the following:
-Client Name: ${form.clientName}
-Project Type: ${form.projectType}
-Requirements: ${form.requirements}
-
-Return JSON with this exact structure:
-{
-  "executiveSummary": "string (2-3 sentences)",
-  "businessObjectives": ["string", "string", "string", "string"],
-  "projectScope": {
-    "inScope": ["string", "string", "string", "string"],
-    "outOfScope": ["string", "string"]
-  },
-  "stakeholders": [
-    {"role": "string", "name": "string (use TBD if unknown)", "responsibility": "string"},
-    {"role": "string", "name": "string", "responsibility": "string"},
-    {"role": "string", "name": "string", "responsibility": "string"},
-    {"role": "string", "name": "string", "responsibility": "string"}
-  ],
-  "functionalRequirements": ["string", "string", "string", "string", "string"],
-  "nonFunctionalRequirements": ["string", "string", "string"],
-  "assumptions": ["string", "string", "string", "string"],
-  "constraints": ["string", "string"],
-  "successCriteria": ["string", "string", "string"],
-  "estimatedTimeline": "string",
-  "riskSummary": ["string", "string", "string"]
-}`,
-          "You are an expert project management AI assistant. Always respond with valid JSON only, no markdown, no extra text.",
-          apiKey,
-        );
-      setBrd(result);
-    } catch (e) {
-      setBrd(null);
-      setApiError(e instanceof Error ? e.message : "Could not generate BRD.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const exportBRD = () => {
-    if (!brd) return;
-    const lines = [
-      `BUSINESS REQUIREMENTS DOCUMENT`,
-      `================================`,
-      `Client: ${form.clientName}`,
-      `Project Type: ${form.projectType}`,
-      `Generated: ${new Date().toLocaleDateString()}`,
-      ``,
-      `EXECUTIVE SUMMARY`,
-      `-----------------`,
-      brd.executiveSummary,
-      ``,
-      `BUSINESS OBJECTIVES`,
-      `-------------------`,
-      ...(brd.businessObjectives || []).map((o, i) => `${i + 1}. ${o}`),
-      ``,
-      `SCOPE - IN SCOPE`,
-      `----------------`,
-      ...(brd.projectScope?.inScope || []).map(s => `• ${s}`),
-      ``,
-      `SCOPE - OUT OF SCOPE`,
-      `--------------------`,
-      ...(brd.projectScope?.outOfScope || []).map(s => `• ${s}`),
-      ``,
-      `STAKEHOLDERS`,
-      `------------`,
-      ...(brd.stakeholders || []).map(s => `• ${s.role} (${s.name}): ${s.responsibility}`),
-      ``,
-      `FUNCTIONAL REQUIREMENTS`,
-      `-----------------------`,
-      ...(brd.functionalRequirements || []).map((r, i) => `FR${i + 1}: ${r}`),
-      ``,
-      `NON-FUNCTIONAL REQUIREMENTS`,
-      `---------------------------`,
-      ...(brd.nonFunctionalRequirements || []).map((r, i) => `NFR${i + 1}: ${r}`),
-      ``,
-      `ASSUMPTIONS`,
-      `-----------`,
-      ...(brd.assumptions || []).map((a, i) => `${i + 1}. ${a}`),
-      ``,
-      `CONSTRAINTS`,
-      `-----------`,
-      ...(brd.constraints || []).map(c => `• ${c}`),
-      ``,
-      `SUCCESS CRITERIA`,
-      `----------------`,
-      ...(brd.successCriteria || []).map(s => `✓ ${s}`),
-      ``,
-      `ESTIMATED TIMELINE: ${brd.estimatedTimeline}`,
-      ``,
-      `RISK SUMMARY`,
-      `------------`,
-      ...(brd.riskSummary || []).map(r => `⚠ ${r}`),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `BRD_${form.clientName.replace(/\s+/g, "_")}.txt`;
-    a.click(); URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-5">
-        <h3 className="text-white font-semibold mb-1 flex items-center gap-2">
-          <span className="text-[#FFE600]">✦</span> AI BRD Generator
-        </h3>
-        <p className="text-[#E5E5E5] text-sm mb-5">Enter project details and let AI generate a full Business Requirements Document.</p>
-        <div className="space-y-4">
-          <div>
-            <label className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5 block">Groq API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              placeholder="Paste your Groq API key here"
-              className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600] transition-colors"
-            />
-            <p className="text-[#E5E5E5]/70 text-xs mt-1">Stored locally in your browser. Needed for BRD generation.</p>
-          </div>
-          <div>
-            <label className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5 block">Client Name *</label>
-            <input
-              value={form.clientName}
-              onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))}
-              placeholder="e.g. Acme Corporation"
-              className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600] transition-colors"
-            />
-          </div>
-          <div>
-            <label className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5 block">Project Type</label>
-            <select
-              value={form.projectType}
-              onChange={e => setForm(f => ({ ...f, projectType: e.target.value }))}
-              className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#FFE600] transition-colors">
-              {projectTypes.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-[#E5E5E5] text-xs uppercase tracking-widest mb-1.5 block">Requirements *</label>
-            <textarea
-              value={form.requirements}
-              onChange={e => setForm(f => ({ ...f, requirements: e.target.value }))}
-              placeholder="Describe the client's needs, goals, and any known requirements..."
-              rows={4}
-              className="w-full bg-[#000000] border border-[#E5E5E5]/20 rounded-lg px-3 py-2.5 text-white text-sm placeholder-[#E5E5E5]/50 focus:outline-none focus:border-[#FFE600] transition-colors resize-none"
-            />
-          </div>
-          <button
-            onClick={generateBRD}
-            disabled={loading || !form.clientName || !form.requirements || !apiKey}
-            className="w-full py-2.5 bg-[#FFE600] hover:bg-[#FFFFFF] disabled:opacity-50 disabled:cursor-not-allowed text-[#000000] font-medium rounded-lg transition-all text-sm">
-            {loading ? "Generating BRD..." : "✦ Generate BRD with AI"}
-          </button>
-        </div>
-      </div>
-
-      {apiError && (
-        <div className="bg-[#000000] border border-[#FFE600]/30 rounded-xl p-4 text-sm text-[#E5E5E5]">
-          <span className="text-[#FFE600] font-semibold">BRD error:</span> {apiError}
-        </div>
-      )}
-
-      {loading && (
-        <div className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-8 flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#FFE600] border-t-transparent rounded-full animate-spin" />
-          <p className="text-[#E5E5E5] text-sm">AI is generating your BRD…</p>
-        </div>
-      )}
-
-      {brd && !loading && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-white font-semibold">Generated BRD: {form.clientName}</h3>
-            <button onClick={exportBRD} className="px-3 py-1.5 bg-[#E5E5E5]/10 hover:bg-[#E5E5E5]/20 border border-[#E5E5E5]/30 text-white text-xs rounded-lg transition-colors">
-              ↓ Export .txt
-            </button>
-          </div>
-
-          {/* Sections */}
-          {[
-            {
-              title: "Executive Summary", color: "yellow", icon: "◈",
-              content: <p className="text-[#E5E5E5] text-sm leading-relaxed">{brd.executiveSummary}</p>
-            },
-            {
-              title: "Business Objectives", color: "yellow", icon: "✦",
-              content: <ol className="space-y-2">{(brd.businessObjectives || []).map((o, i) => (
-                <li key={i} className="flex gap-3 text-sm text-[#E5E5E5]"><span className="text-[#FFE600] font-mono font-bold">{String(i + 1).padStart(2, "0")}</span>{o}</li>
-              ))}</ol>
-            },
-            {
-              title: "Project Scope", color: "yellow", icon: "◉",
-              content: <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-[#FFE600] text-xs font-bold uppercase mb-2">In Scope</div>
-                  <ul className="space-y-1">{(brd.projectScope?.inScope || []).map((s, i) => <li key={i} className="text-[#E5E5E5] text-sm flex gap-2"><span className="text-[#FFE600]">✓</span>{s}</li>)}</ul>
-                </div>
-                <div>
-                  <div className="text-[#E5E5E5] text-xs font-bold uppercase mb-2">Out of Scope</div>
-                  <ul className="space-y-1">{(brd.projectScope?.outOfScope || []).map((s, i) => <li key={i} className="text-[#E5E5E5] text-sm flex gap-2"><span className="text-[#2E2E2E]">✗</span>{s}</li>)}</ul>
-                </div>
-              </div>
-            },
-            {
-              title: "Stakeholders", color: "yellow", icon: "◆",
-              content: <div className="space-y-2">{(brd.stakeholders || []).map((s, i) => (
-                <div key={i} className="flex gap-3 p-3 bg-[#000000] rounded-lg text-sm border border-[#E5E5E5]/10">
-                  <span className="text-[#FFE600] font-medium min-w-28">{s.role}</span>
-                  <span className="text-[#FFFFFF]">{s.name}</span>
-                  <span className="text-[#E5E5E5]">·</span>
-                  <span className="text-[#E5E5E5] flex-1">{s.responsibility}</span>
-                </div>
-              ))}</div>
-            },
-            {
-              title: "Functional Requirements", color: "yellow", icon: "⬡",
-              content: <ol className="space-y-2">{(brd.functionalRequirements || []).map((r, i) => (
-                <li key={i} className="flex gap-3 text-sm text-[#E5E5E5]"><span className="text-[#000000] font-mono text-xs font-bold bg-[#FFE600] px-2 py-0.5 rounded">FR{i + 1}</span>{r}</li>
-              ))}</ol>
-            },
-            {
-              title: "Non-Functional Requirements", color: "yellow", icon: "⬡",
-              content: <ol className="space-y-2">{(brd.nonFunctionalRequirements || []).map((r, i) => (
-                <li key={i} className="flex gap-3 text-sm text-[#E5E5E5]"><span className="text-[#000000] font-mono text-xs font-bold bg-[#E5E5E5] px-2 py-0.5 rounded">NFR{i + 1}</span>{r}</li>
-              ))}</ol>
-            },
-            {
-              title: "Assumptions", color: "gray", icon: "◌",
-              content: <ul className="space-y-1">{(brd.assumptions || []).map((a, i) => <li key={i} className="text-[#E5E5E5] text-sm flex gap-2"><span className="text-[#2E2E2E]">·</span>{a}</li>)}</ul>
-            },
-            {
-              title: "Success Criteria", color: "yellow", icon: "✓",
-              content: <ul className="space-y-1">{(brd.successCriteria || []).map((s, i) => <li key={i} className="text-[#E5E5E5] text-sm flex gap-2"><span className="text-[#FFE600]">✓</span>{s}</li>)}</ul>
-            },
-            {
-              title: "Risk Summary", color: "yellow", icon: "⚠",
-              content: <ul className="space-y-1">{(brd.riskSummary || []).map((r, i) => <li key={i} className="text-[#E5E5E5] text-sm flex gap-2"><span className="text-[#FFE600]">⚠</span>{r}</li>)}</ul>
-            },
-          ].map(section => (
-            <div key={section.title} className="bg-[#2E2E2E] border border-[#E5E5E5]/20 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className={section.color === "yellow" ? "text-[#FFE600]" : "text-[#E5E5E5]"}>{section.icon}</span>
-                <h4 className="text-white font-semibold text-sm">{section.title}</h4>
-                {section.title === "Risk Summary" && <span className="text-xs text-[#FFE600] font-bold">(Review carefully)</span>}
-              </div>
-              {section.content}
-              {section.title === "Risk Summary" && brd.estimatedTimeline && (
-                <div className="mt-3 pt-3 border-t border-[#E5E5E5]/20 text-sm text-[#E5E5E5]">
-                  Estimated Timeline: <span className="text-white font-medium">{brd.estimatedTimeline}</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LoginPage({ onLogin }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const cleanUser = username.trim().toLowerCase();
-    const cleanPass = password.trim().toLowerCase();
-    
-    if (cleanUser === "admin" && cleanPass === "admin") {
-      onLogin();
-    } else {
-      setError("Invalid credentials. Please use 'admin' for both.");
-    }
-  };
-
-  return (
-    <div style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: "100vh",
-      background: EY.black,
-      backgroundImage: `
-        radial-gradient(circle at center, rgba(255, 230, 0, 0.1) 0%, transparent 70%),
-        linear-gradient(180deg, #000000 0%, #1A1A1A 100%)
-      `,
-      padding: "20px"
-    }}>
-      <div style={{
-        width: "100%",
-        maxWidth: 400,
-        background: "rgba(46, 46, 46, 0.4)",
-        backdropFilter: "blur(12px)",
-        border: "1px solid rgba(229, 229, 229, 0.1)",
-        borderRadius: 20,
-        padding: "40px 30px",
-        boxShadow: "0 20px 50px rgba(0, 0, 0, 0.5)"
-      }}>
-        <div style={{ textAlign: "center", marginBottom: 35 }}>
-          <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 800, color: EY.yellow, letterSpacing: "-0.5px" }}>
-            PRISM<span style={{ color: EY.white, fontWeight: 700 }}>PM</span>
-          </div>
-          <div style={{ fontSize: 11, color: EY.lightGray, marginTop: 4, letterSpacing: "0.15em", textTransform: "uppercase" }}>
-            Enterprise AI Management
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {error && (
-            <div style={{
-              background: "rgba(239, 68, 68, 0.15)",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              color: "#EF4444",
-              fontSize: 12,
-              padding: "10px 12px",
-              borderRadius: 8,
-              textAlign: "center"
-            }}>
-              {error}
-            </div>
-          )}
-
-          <div>
-            <label style={{ color: EY.lightGray, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", display: "block", marginBottom: 8 }}>
-              Username
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              placeholder="Enter admin username"
-              required
-              style={{
-                width: "100%",
-                background: "rgba(0, 0, 0, 0.5)",
-                border: "1px solid rgba(229, 229, 229, 0.2)",
-                borderRadius: 10,
-                padding: "12px 16px",
-                color: EY.white,
-                fontSize: 14,
-                outline: "none",
-                transition: "border-color 0.2s ease"
-              }}
-              onFocus={e => e.target.style.borderColor = EY.yellow}
-              onBlur={e => e.target.style.borderColor = "rgba(229, 229, 229, 0.2)"}
-            />
-          </div>
-
-          <div>
-            <label style={{ color: EY.lightGray, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", display: "block", marginBottom: 8 }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              style={{
-                width: "100%",
-                background: "rgba(0, 0, 0, 0.5)",
-                border: "1px solid rgba(229, 229, 229, 0.2)",
-                borderRadius: 10,
-                padding: "12px 16px",
-                color: EY.white,
-                fontSize: 14,
-                outline: "none",
-                transition: "border-color 0.2s ease"
-              }}
-              onFocus={e => e.target.style.borderColor = EY.yellow}
-              onBlur={e => e.target.style.borderColor = "rgba(229, 229, 229, 0.2)"}
-            />
-          </div>
-
-          <button
-            type="submit"
-            style={{
-              background: EY.yellow,
-              color: EY.black,
-              border: "none",
-              borderRadius: 10,
-              padding: "14px",
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              marginTop: 10
-            }}
-            onMouseEnter={e => {
-              e.target.style.background = EY.white;
-              e.target.style.boxShadow = `0 0 15px ${EY.yellow}`;
-            }}
-            onMouseLeave={e => {
-              e.target.style.background = EY.yellow;
-              e.target.style.boxShadow = "none";
-            }}
-          >
-            Sign In
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main App ────────────────────────────────────────────────────────────────
+// ─── Main App Component ──────────────────────────────────────────────────────
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    try {
-      return localStorage.getItem("prismpm.isLoggedIn") === "true";
-    } catch {
-      return false;
-    }
+    try { return localStorage.getItem("prismpm.isLoggedIn") === "true"; } catch { return false; }
   });
 
   const handleLogin = () => {
     setIsLoggedIn(true);
-    try {
-      localStorage.setItem("prismpm.isLoggedIn", "true");
-    } catch {}
+    try { localStorage.setItem("prismpm.isLoggedIn", "true"); } catch {}
   };
 
   const [tab, setTab] = useState("dashboard");
+  const [activeProjectId, setActiveProjectId] = useState(1);
   const [selectedProject, setSelectedProject] = useState(null);
+
+  // States with Local Storage Support
   const [projects, setProjects] = useState(() => {
     try {
-      const storedProjects = localStorage.getItem("prismpm.projects");
-      return storedProjects ? JSON.parse(storedProjects) : INITIAL_PROJECTS;
-    } catch {
-      return INITIAL_PROJECTS;
-    }
+      const stored = localStorage.getItem("prismpm.projects");
+      return stored ? JSON.parse(stored) : INITIAL_PROJECTS;
+    } catch { return INITIAL_PROJECTS; }
   });
+
+  const [epics, setEpics] = useState(() => {
+    try {
+      const stored = localStorage.getItem("prismpm.epics");
+      return stored ? JSON.parse(stored) : INITIAL_EPICS;
+    } catch { return INITIAL_EPICS; }
+  });
+
+  const [stories, setStories] = useState(() => {
+    try {
+      const stored = localStorage.getItem("prismpm.stories");
+      return stored ? JSON.parse(stored) : INITIAL_STORIES;
+    } catch { return INITIAL_STORIES; }
+  });
+
+  const [sprints, setSprints] = useState(() => {
+    try {
+      const stored = localStorage.getItem("prismpm.sprints");
+      return stored ? JSON.parse(stored) : INITIAL_SPRINTS;
+    } catch { return INITIAL_SPRINTS; }
+  });
+
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const stored = localStorage.getItem("prismpm.tasks");
+      return stored ? JSON.parse(stored) : INITIAL_TASKS;
+    } catch { return INITIAL_TASKS; }
+  });
+
+  const [risks, setRisks] = useState(() => {
+    try {
+      const stored = localStorage.getItem("prismpm.risks");
+      return stored ? JSON.parse(stored) : INITIAL_RISKS;
+    } catch { return INITIAL_RISKS; }
+  });
+
   const [employees, setEmployees] = useState(() => {
     try {
-      const storedTeam = localStorage.getItem(PM_STORAGE_KEY);
-      const parsedTeam = storedTeam ? JSON.parse(storedTeam) : INITIAL_TEAM_MEMBERS;
-      return mergeTeamRoster(parsedTeam);
-    } catch {
-      return INITIAL_TEAM_MEMBERS;
-    }
+      const stored = localStorage.getItem(PM_STORAGE_KEY);
+      return stored ? mergeTeamRoster(JSON.parse(stored)) : INITIAL_TEAM_MEMBERS;
+    } catch { return INITIAL_TEAM_MEMBERS; }
   });
 
-  useEffect(() => {
+  const [notifications, setNotifications] = useState(() => {
     try {
-      localStorage.setItem("prismpm.projects", JSON.stringify(projects));
-    } catch {
-      // Ignore storage failures and keep the in-memory list working.
-    }
-  }, [projects]);
+      const stored = localStorage.getItem("prismpm.notifications");
+      return stored ? JSON.parse(stored) : [
+        { id: 1, message: "PRISM Intelligence online.", timestamp: new Date().toISOString(), type: "system", read: false },
+        { id: 2, message: "Setup completed successfully.", timestamp: new Date().toISOString(), type: "info", read: false }
+      ];
+    } catch { return []; }
+  });
 
+  // UI state variables
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [storyDetailModal, setStoryDetailModal] = useState(null);
+
+  // Sync to local storage
+  useEffect(() => { try { localStorage.setItem("prismpm.projects", JSON.stringify(projects)); } catch {} }, [projects]);
+  useEffect(() => { try { localStorage.setItem("prismpm.epics", JSON.stringify(epics)); } catch {} }, [epics]);
+  useEffect(() => { try { localStorage.setItem("prismpm.stories", JSON.stringify(stories)); } catch {} }, [stories]);
+  useEffect(() => { try { localStorage.setItem("prismpm.sprints", JSON.stringify(sprints)); } catch {} }, [sprints]);
+  useEffect(() => { try { localStorage.setItem("prismpm.tasks", JSON.stringify(tasks)); } catch {} }, [tasks]);
+  useEffect(() => { try { localStorage.setItem("prismpm.risks", JSON.stringify(risks)); } catch {} }, [risks]);
+  useEffect(() => { try { localStorage.setItem(PM_STORAGE_KEY, JSON.stringify(employees)); } catch {} }, [employees]);
+  useEffect(() => { try { localStorage.setItem("prismpm.notifications", JSON.stringify(notifications)); } catch {} }, [notifications]);
+
+  // Logging notification helper
+  const addNotification = (message, type = "info") => {
+    const newNotif = {
+      id: Date.now() + Math.random(),
+      message,
+      timestamp: new Date().toISOString(),
+      type,
+      read: false
+    };
+    setNotifications(prev => [newNotif, ...prev]);
+  };
+
+  const currentProject = projects.find(p => p.id === activeProjectId) || projects[0] || null;
+
+  // Recalculating project progress based on completed Story Points
   useEffect(() => {
-    try {
-      localStorage.setItem(PM_STORAGE_KEY, JSON.stringify(employees));
-    } catch {
-      // Ignore storage failures and keep the in-memory list working.
+    if (!projects.length) return;
+    const nextProjects = projects.map(p => {
+      const projStories = stories.filter(s => s.projectId === p.id);
+      if (projStories.length === 0) return { ...p, progress: 0 };
+      const donePoints = projStories.filter(s => s.status === "Done").reduce((sum, s) => sum + (Number(s.points) || 0), 0);
+      const totalPoints = projStories.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
+      const calculatedProgress = totalPoints > 0 ? Math.round((donePoints / totalPoints) * 100) : 0;
+      if (p.progress !== calculatedProgress) {
+        return { ...p, progress: calculatedProgress };
+      }
+      return p;
+    });
+    const changed = JSON.stringify(projects) !== JSON.stringify(nextProjects);
+    if (changed) {
+      setProjects(nextProjects);
     }
-  }, [employees]);
+  }, [stories]);
 
-  const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: "◈" },
-    { id: "team", label: "Team", icon: "◆" },
-    { id: "brd", label: "BRD Generator", icon: "✦" },
-  ];
+  // Recalculating epic progress based on completed Story Points inside the epic
+  useEffect(() => {
+    if (!epics.length) return;
+    const nextEpics = epics.map(ep => {
+      const epicStories = stories.filter(s => s.epicId === ep.id);
+      if (epicStories.length === 0) return { ...ep, progress: 0 };
+      const donePoints = epicStories.filter(s => s.status === "Done").reduce((sum, s) => sum + (Number(s.points) || 0), 0);
+      const totalPoints = epicStories.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
+      const calculatedProgress = totalPoints > 0 ? Math.round((donePoints / totalPoints) * 100) : 0;
+      if (ep.progress !== calculatedProgress) {
+        return { ...ep, progress: calculatedProgress };
+      }
+      return ep;
+    });
+    const changed = JSON.stringify(epics) !== JSON.stringify(nextEpics);
+    if (changed) {
+      setEpics(nextEpics);
+    }
+  }, [stories]);
 
+  // Project handling functions
   const handleSelectProject = (p) => {
+    setActiveProjectId(p.id);
     setSelectedProject(p);
     setTab("project");
-  };
-
-  const handleBack = () => {
-    setSelectedProject(null);
-    setTab("dashboard");
-  };
-
-  const handleAddTeamMember = (member) => {
-    setEmployees(currentEmployees => [member, ...currentEmployees]);
-    setTab("team");
   };
 
   const handleCreateProject = (project) => {
     const nextEmployees = employees.map(e => {
       const isInitialMember = project.team.some(m => m.name === e.name && m.role === e.role);
       if (isInitialMember) {
-        const nextProjects = (e.projects || 0) + 1;
-        return { ...e, projects: nextProjects, available: false };
+        return { ...e, projects: (e.projects || 0) + 1, available: false };
       }
       return e;
     });
-
     setEmployees(nextEmployees);
 
-    setProjects(currentProjects => {
-      const compatibilityScore = updateProjectCompatibility(project.team, project.pm, nextEmployees);
-      const updatedProject = { ...project, compatibilityScore };
-      return [updatedProject, ...currentProjects];
-    });
-
-    setTab("team");
+    const compatibilityScore = updateProjectCompatibility(project.team, project.pm, nextEmployees);
+    const updatedProject = { ...project, compatibilityScore };
+    setProjects(current => [updatedProject, ...current]);
+    addNotification(`Project "${project.name}" has been created.`, "system");
   };
 
   const handleAddMemberToProject = (member, projectId) => {
     const nextEmployees = employees.map(e => {
       if (e.name === member.name && e.role === member.role) {
-        const nextProjects = (e.projects || 0) + 1;
-        return { ...e, projects: nextProjects, available: false };
+        return { ...e, projects: (e.projects || 0) + 1, available: false };
       }
       return e;
     });
-
     setEmployees(nextEmployees);
 
-    setProjects(currentProjects => currentProjects.map(p => {
+    setProjects(current => current.map(p => {
       if (p.id !== projectId) return p;
       if (p.team.some(m => m.name === member.name && m.role === member.role)) return p;
-      
       const newTeam = [...p.team, {
-        name: member.name,
-        role: member.role,
-        skillStars: member.skillStars,
-        specialty: member.specialty
+        name: member.name, role: member.role, skillStars: member.skillStars, specialty: member.specialty
       }];
-      
-      const compatibilityScore = updateProjectCompatibility(newTeam, p.pm, nextEmployees);
-      return { ...p, team: newTeam, compatibilityScore };
+      return { ...p, team: newTeam, compatibilityScore: updateProjectCompatibility(newTeam, p.pm, nextEmployees) };
     }));
+    addNotification(`Assigned ${member.name} (${member.role}) to Project ID ${projectId}.`, "assignment");
   };
 
   const handleDropMemberFromProject = (member, projectId) => {
     const nextEmployees = employees.map(e => {
       if (e.name === member.name && e.role === member.role) {
-        const nextProjects = Math.max(0, (e.projects || 0) - 1);
-        return { ...e, projects: nextProjects, available: nextProjects === 0 };
+        const nextCount = Math.max(0, (e.projects || 0) - 1);
+        return { ...e, projects: nextCount, available: nextCount === 0 };
       }
       return e;
     });
-
     setEmployees(nextEmployees);
 
-    setProjects(currentProjects => currentProjects.map(p => {
+    setProjects(current => current.map(p => {
       if (p.id !== projectId) return p;
-      
       const newTeam = p.team.filter(m => !(m.name === member.name && m.role === member.role));
-      const compatibilityScore = updateProjectCompatibility(newTeam, p.pm, nextEmployees);
-      return { ...p, team: newTeam, compatibilityScore };
+      return { ...p, team: newTeam, compatibilityScore: updateProjectCompatibility(newTeam, p.pm, nextEmployees) };
     }));
+    addNotification(`Dropped ${member.name} from Project ID ${projectId}.`, "system");
   };
 
   const handleDeleteProject = (projectId) => {
     const projectToDelete = projects.find(p => p.id === projectId);
-    
     if (projectToDelete && projectToDelete.team) {
-      setEmployees(currentEmployees => currentEmployees.map(e => {
+      setEmployees(current => current.map(e => {
         const isAllocated = projectToDelete.team.some(m => m.name === e.name && m.role === e.role);
         if (isAllocated) {
-          const nextProjects = Math.max(0, (e.projects || 0) - 1);
-          return { ...e, projects: nextProjects, available: nextProjects === 0 };
+          const nextCount = Math.max(0, (e.projects || 0) - 1);
+          return { ...e, projects: nextCount, available: nextCount === 0 };
         }
         return e;
       }));
     }
-
-    setProjects(currentProjects => currentProjects.filter(p => p.id !== projectId));
-    setSelectedProject(null);
+    setProjects(current => current.filter(p => p.id !== projectId));
+    setStories(current => current.filter(s => s.projectId !== projectId));
+    setEpics(current => current.filter(ep => ep.projectId !== projectId));
+    setSprints(current => current.filter(sp => sp.projectId !== projectId));
+    setRisks(current => current.filter(r => r.projectId !== projectId));
+    addNotification(`Deleted project with ID: ${projectId}.`, "system");
+    if (selectedProject?.id === projectId) {
+      setSelectedProject(null);
+    }
     setTab("dashboard");
   };
 
-  if (!isLoggedIn) {
-    return (
-      <div style={{ fontFamily: "'Inter', sans-serif", minHeight: "100vh", background: EY.black, color: EY.white }}>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;700&display=swap');
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-        `}</style>
-        <LoginPage onLogin={handleLogin} />
-      </div>
-    );
-  }
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: "◈" },
+    { id: "agile", label: "Agile Board", icon: "📋" },
+    { id: "team", label: "Team Directory", icon: "◆" },
+    { id: "brd", label: "BRD Generator", icon: "✦" },
+  ];
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif", minHeight: "100vh", background: EY.black, color: EY.white }}>
+    <div className="min-h-screen bg-[#000000] text-[#FFFFFF]" style={{ fontFamily: "'Inter', sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::selection { background: #FFE600; color: #000000; }
-        ::-webkit-scrollbar { width: 6px; } 
+        ::-webkit-scrollbar { width: 6px; height: 6px; } 
         ::-webkit-scrollbar-track { background: #000000; } 
         ::-webkit-scrollbar-thumb { background: #FFE600; border-radius: 3px; }
         .animate-spin { animation: spin 1s linear infinite; }
         .animate-pulse { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
-        .transition-all { transition: all 0.2s ease; }
-        .transition-colors { transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease; }
         select option { background: #2E2E2E; color: #FFFFFF; }
       `}</style>
 
-      <div style={{ display: "flex", minHeight: "100vh" }}>
-        {/* Sidebar */}
-        <aside style={{ width: 220, background: EY.darkGray, borderRight: `1px solid ${EY.lightGray}33`, display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh" }}>
-          <div style={{ padding: "24px 20px 16px" }}>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 800, color: EY.yellow, letterSpacing: "-0.5px" }}>
-              PRISM<span style={{ color: EY.white, fontWeight: 700 }}>PM</span>
+      {!isLoggedIn ? (
+        <LoginPage onLogin={handleLogin} />
+      ) : (
+        <div className="flex min-h-screen">
+          {/* Sidebar */}
+          <aside className="w-56 bg-[#2E2E2E] border-r border-white/10 flex flex-col sticky top-0 h-screen z-20">
+            <div className="p-6">
+              <div className="font-bold text-2xl text-[#FFE600] tracking-tight font-['Syne']">
+                PRISM<span className="text-white font-medium">PM</span>
+              </div>
+              <div className="text-[9px] text-[#E5E5E5] tracking-widest uppercase mt-1">
+                AI Project Intelligence
+              </div>
             </div>
-            <div style={{ fontSize: 10, color: EY.lightGray, marginTop: 2, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              AI Project Intelligence
-            </div>
-          </div>
 
-          <nav style={{ padding: "8px 12px", flex: 1 }}>
-            {navItems.map(item => (
-              <button key={item.id}
-                onClick={() => { setTab(item.id); setSelectedProject(null); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 10, width: "100%",
-                  padding: "10px 12px", borderRadius: 10, border: "none", cursor: "pointer",
-                  marginBottom: 4, textAlign: "left", fontSize: 13, fontWeight: 500,
-                  transition: "all 0.15s ease",
-                  background: tab === item.id ? `${EY.yellow}1A` : "transparent",
-                  color: tab === item.id ? EY.white : EY.lightGray,
-                  borderLeft: tab === item.id ? `2px solid ${EY.yellow}` : "2px solid transparent",
-                }}>
-                <span style={{ fontSize: 14 }}>{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
-          </nav>
+            {/* Navigation */}
+            <nav className="px-3 flex-1 space-y-1">
+              {navItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => { setTab(item.id); setSelectedProject(null); }}
+                  className={`flex items-center gap-3 w-full px-4 py-2.5 rounded-xl text-left text-xs font-semibold tracking-wider transition-all duration-150 ${
+                    tab === item.id 
+                      ? "bg-[#FFE600]/10 text-white border-l-4 border-[#FFE600]" 
+                      : "text-slate-400 hover:text-white hover:bg-white/5 border-l-4 border-transparent"
+                  }`}
+                >
+                  <span className="text-sm">{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
+            </nav>
 
-          {/* Project quick-links */}
-          <div style={{ padding: "12px", borderTop: `1px solid ${EY.lightGray}33` }}>
-            <div style={{ fontSize: 9, color: EY.lightGray, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8, paddingLeft: 4 }}>
-              Active Projects
+            {/* Quick Project selector link list */}
+            <div className="p-4 border-t border-white/10">
+              <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-2 px-2">Active Projects</div>
+              <div className="space-y-1 max-h-36 overflow-y-auto">
+                {projects.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => handleSelectProject(p)}
+                    className="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg text-left text-slate-400 hover:text-white hover:bg-[#FFE600]/5 transition-all"
+                  >
+                    <span className={`w-2 h-2 rounded-full ${p.status === "On Track" ? "bg-[#FFE600]" : p.status === "At Risk" ? "bg-amber-500" : "bg-red-500"}`} />
+                    <span className="text-[11px] truncate">{p.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            {projects.map(p => (
-              <button key={p.id} onClick={() => handleSelectProject(p)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, width: "100%",
-                  padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer",
-                  marginBottom: 2, background: "transparent", textAlign: "left",
-                  transition: "all 0.15s ease",
+
+            {/* Logout button */}
+            <div className="p-4 border-t border-white/10">
+              <button
+                onClick={() => {
+                  setIsLoggedIn(false);
+                  try { localStorage.removeItem("prismpm.isLoggedIn"); } catch {}
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,230,0,0.08)"}
-                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                  background: p.status === "On Track" ? EY.yellow : p.status === "At Risk" ? EY.lightGray : EY.white,
-                  boxShadow: `0 0 6px ${p.status === "On Track" ? EY.yellow : p.status === "At Risk" ? EY.lightGray : EY.white}`,
-                }} />
-                <span style={{ fontSize: 11, color: EY.lightGray, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {p.name}
-                </span>
+                className="flex items-center gap-3 w-full px-4 py-2 rounded-xl text-left text-xs font-semibold text-[#FFE600] hover:bg-[#FFE600]/10 transition-all"
+              >
+                <span>🚪</span> Logout
               </button>
-            ))}
-          </div>
+            </div>
+          </aside>
 
-          {/* Logout */}
-          <div style={{ padding: "12px", borderTop: `1px solid ${EY.lightGray}33`, marginTop: "auto" }}>
-            <button
-              onClick={() => {
-                setIsLoggedIn(false);
-                try {
-                  localStorage.removeItem("prismpm.isLoggedIn");
-                } catch {}
-              }}
-              style={{
-                display: "flex", alignItems: "center", gap: 10, width: "100%",
-                padding: "10px 12px", borderRadius: 10, border: "none", cursor: "pointer",
-                textAlign: "left", fontSize: 13, fontWeight: 500, transition: "all 0.15s ease",
-                background: "transparent", color: EY.yellow,
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,230,0,0.08)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-            >
-              <span>🚪</span> Logout
+          {/* Main workspace */}
+          <main className="flex-1 flex flex-col min-w-0">
+            {/* Header top bar */}
+            <header className="sticky top-0 bg-black/95 backdrop-blur border-b border-white/10 px-8 py-4 flex items-center justify-between z-10">
+              <div>
+                <h1 className="text-xl font-extrabold tracking-wide text-white capitalize">
+                  {tab === "dashboard" ? "Project Portfolio" 
+                    : tab === "team" ? "Team Directory" 
+                    : tab === "brd" ? "AI BRD Generator" 
+                    : tab === "agile" ? `Agile Scrum Board: ${currentProject?.name || "Choose Project"}` 
+                    : selectedProject?.name || "Project"}
+                </h1>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {tab === "dashboard" ? `${projects.length} Active Projects · ${risks.filter(r => r.severity === "Critical").length} Critical Risks` 
+                    : tab === "team" ? `${employees.length} Team Members Roster` 
+                    : tab === "brd" ? "Generate complete functional specs via LLM" 
+                    : tab === "agile" ? "Manage sprints, backlog, and Kanban flow"
+                    : selectedProject ? `${selectedProject.client} · ${selectedProject.type}` : ""}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-5">
+                {/* Active Project Quick Dropdown in Header */}
+                {(tab === "agile" || tab === "project") && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 text-[10px] uppercase tracking-wider">Project:</span>
+                    <select
+                      value={activeProjectId}
+                      onChange={e => {
+                        const nextId = Number(e.target.value);
+                        setActiveProjectId(nextId);
+                        const nextP = projects.find(p => p.id === nextId);
+                        if (nextP && tab === "project") {
+                          setSelectedProject(nextP);
+                        }
+                      }}
+                      className="bg-[#2E2E2E] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#FFE600]"
+                    >
+                      {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full bg-[#FFE600] animate-pulse" />
+                  <span className="text-xs text-slate-400 font-medium font-mono">AI Active</span>
+                </div>
+
+                {/* Notifications trigger bell */}
+                <button
+                  onClick={() => setShowNotificationsDrawer(true)}
+                  className="relative p-2 text-slate-400 hover:text-[#FFE600] bg-[#2E2E2E]/60 rounded-xl transition-all"
+                >
+                  <span>🔔</span>
+                  {notifications.filter(n => !n.read).length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-[#FFE600] text-black text-[9px] font-black rounded-full w-4.5 h-4.5 flex items-center justify-center">
+                      {notifications.filter(n => !n.read).length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </header>
+
+            {/* Content */}
+            <div className="p-8 max-w-6xl w-full mx-auto">
+              {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} />}
+              {tab === "team" && (
+                <TeamTab
+                  employees={employees}
+                  onAddMember={(m) => { setEmployees(prev => [m, ...prev]); addNotification(`Added new roster member: ${m.name}`, "system"); }}
+                  projects={projects}
+                  onAddMemberToProject={handleAddMemberToProject}
+                  onDropMemberFromProject={handleDropMemberFromProject}
+                  onCreateProject={handleCreateProject}
+                  onDeleteProject={handleDeleteProject}
+                />
+              )}
+              {tab === "brd" && <BRDTab projects={projects} setProjects={setProjects} stories={stories} setStories={setStories} addNotification={addNotification} />}
+              {tab === "agile" && (
+                <AgileBoardTab
+                  projectId={activeProjectId}
+                  projects={projects}
+                  epics={epics}
+                  setEpics={setEpics}
+                  stories={stories}
+                  setStories={setStories}
+                  sprints={sprints}
+                  setSprints={setSprints}
+                  tasks={tasks}
+                  setTasks={setTasks}
+                  employees={employees}
+                  addNotification={addNotification}
+                  setStoryDetailModal={setStoryDetailModal}
+                />
+              )}
+              {tab === "project" && selectedProject && (
+                <ProjectDetail
+                  project={selectedProject}
+                  projects={projects}
+                  setProjects={setProjects}
+                  epics={epics}
+                  setEpics={setEpics}
+                  stories={stories}
+                  setStories={setStories}
+                  sprints={sprints}
+                  setSprints={setSprints}
+                  tasks={tasks}
+                  setTasks={setTasks}
+                  risks={risks}
+                  setRisks={setRisks}
+                  employees={employees}
+                  onBack={() => setTab("dashboard")}
+                  onDeleteProject={handleDeleteProject}
+                  addNotification={addNotification}
+                />
+              )}
+            </div>
+          </main>
+        </div>
+      )}
+
+      {/* Notifications Drawer */}
+      {showNotificationsDrawer && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm">
+          <div className="w-80 bg-[#1e1e1e] border-l border-white/10 h-full p-5 flex flex-col justify-between shadow-2xl">
+            <div>
+              <div className="flex justify-between items-center pb-4 border-b border-white/10 mb-4">
+                <h3 className="text-white font-bold flex items-center gap-2 text-sm uppercase tracking-wider">
+                  <span>🔔</span> Notifications
+                </h3>
+                <div className="flex gap-3">
+                  <button onClick={() => {
+                    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+                    addNotification("All notifications marked as read.", "system");
+                  }} className="text-[10px] text-[#FFE600] font-bold hover:text-white transition-colors">Mark All Read</button>
+                  <button onClick={() => setShowNotificationsDrawer(false)} className="text-xs text-slate-400 hover:text-white transition-colors">✕</button>
+                </div>
+              </div>
+              <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-130px)] pr-1">
+                {notifications.length === 0 ? (
+                  <div className="text-slate-500 text-xs text-center py-10">No recent notifications.</div>
+                ) : (
+                  notifications.map(n => (
+                    <div key={n.id} className={`p-3 rounded-xl border text-[11px] relative transition-all duration-200 ${n.read ? "bg-black/20 border-white/5 text-slate-400" : "bg-[#2E2E2E]/40 border-[#FFE600]/20 text-white"}`}>
+                      <div className="flex justify-between items-start mb-1.5">
+                        <span className={`px-1.5 py-0.2 rounded text-[8px] font-mono tracking-widest uppercase ${n.type === "system" ? "bg-indigo-900/35 text-indigo-300 border border-indigo-700/20" : n.type === "assignment" ? "bg-emerald-900/35 text-emerald-300 border border-emerald-700/20" : "bg-[#FFE600]/10 text-[#FFE600] border border-[#FFE600]/20"}`}>{n.type}</span>
+                        <span className="text-[8px] text-slate-500 font-mono">{new Date(n.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <p className="pr-4 leading-relaxed font-sans">{n.message}</p>
+                      <button onClick={() => setNotifications(prev => prev.filter(x => x.id !== n.id))} className="absolute top-2.5 right-2.5 text-[10px] text-slate-500 hover:text-white">✕</button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <button onClick={() => setNotifications([])} className="w-full py-2.5 bg-black hover:bg-slate-900 text-slate-400 hover:text-white border border-white/10 text-xs font-bold rounded-xl transition-all">
+              Clear All Notifications
             </button>
           </div>
-        </aside>
+        </div>
+      )}
 
-        {/* Main content */}
-        <main style={{ flex: 1, overflow: "auto" }}>
-          {/* Top bar */}
-          <header style={{ padding: "16px 28px", borderBottom: `1px solid ${EY.lightGray}33`, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "rgba(0,0,0,0.96)", backdropFilter: "blur(8px)", zIndex: 10 }}>
-            <div>
-              <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 800, color: EY.white }}>
-                {tab === "dashboard" ? "Project Portfolio" : tab === "team" ? "Team Directory" : tab === "brd" ? "BRD Generator" : selectedProject?.name || "Project"}
-              </h1>
-              <p style={{ fontSize: 12, color: EY.lightGray, marginTop: 2 }}>
-                {tab === "dashboard" ? `${projects.length} active projects · ${projects.flatMap(p => p.risks.filter(r => r.severity === "Critical")).length} critical risks` :
-                  tab === "team" ? `${employees.length} team members` :
-                    tab === "brd" ? "Generate AI-powered BRDs in seconds" :
-                      selectedProject ? `${selectedProject.client} · ${selectedProject.type}` : ""}
-              </p>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: EY.lightGray }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: EY.yellow, display: "inline-block", boxShadow: `0 0 6px ${EY.yellow}` }} />
-              AI Connected
-            </div>
-          </header>
+      {/* Story & Tasks Details Modal (with Collaboration Comments section) */}
+      {storyDetailModal && (
+        <StoryDetailModal
+          story={storyDetailModal}
+          onClose={() => setStoryDetailModal(null)}
+          tasks={tasks}
+          setTasks={setTasks}
+          employees={employees}
+          stories={stories}
+          setStories={setStories}
+          epics={epics}
+          sprints={sprints}
+          addNotification={addNotification}
+        />
+      )}
+    </div>
+  );
+}
 
-          {/* Content */}
-          <div style={{ padding: "24px 28px", maxWidth: 1000 }}>
-            {tab === "dashboard" && (
-              <div className="space-y-5">
-                <DashboardTab projects={projects} onSelectProject={handleSelectProject} />
+// ─── Dashboard Tab Component ────────────────────────────────────────────────
+function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees }) {
+  const totalBudget = projects.reduce((sum, p) => sum + p.budget, 0);
+  const totalSpent = projects.reduce((sum, p) => sum + p.spent, 0);
+  const totalCriticalRisks = risks.filter(r => r.severity === "Critical").length;
+  const delayedTasks = tasks.filter(t => t.status !== "Done" && (new Date(t.due) < new Date()));
+
+  // Team wide workload stats
+  const memberWorkload = employees.map(emp => {
+    const assignedStories = stories.filter(s => s.assignee === emp.name && s.status !== "Done");
+    const points = assignedStories.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
+    return { name: emp.name, role: emp.role, points, count: assignedStories.length };
+  }).filter(e => e.points > 0).sort((a, b) => b.points - a.points);
+
+  return (
+    <div className="space-y-8">
+      {/* KPI Cards Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Active Projects", value: projects.length, icon: "◈", color: "text-[#FFE600]" },
+          { label: "Critical Risks", value: totalCriticalRisks, icon: "⚠", color: "text-rose-400" },
+          { label: "Overdue Tasks", value: delayedTasks.length, icon: "⏱", color: "text-amber-400" },
+          { label: "Budget Utilization", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "0%", icon: "💰", color: "text-white" },
+        ].map((k) => (
+          <div key={k.label} className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-5 hover:border-[#FFE600]/30 transition-all duration-300">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className={`text-xl ${k.color}`}>{k.icon}</span>
+              <span className="text-slate-400 text-[9px] uppercase tracking-wider font-semibold">{k.label}</span>
+            </div>
+            <div className={`font-mono font-bold text-3xl ${k.color}`}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Portfolio Overview Section */}
+      <div className="grid gap-6">
+        <div>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-[#FFE600] font-bold text-xs uppercase tracking-widest">Enterprise Projects Portfolio</h2>
+            <button
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all"
+            >
+              Reset Workspace to Empty Slate
+            </button>
+          </div>
+          <div className="grid gap-4">
+            {projects.map((p) => {
+              const projRisks = risks.filter(r => r.projectId === p.id);
+              const projStories = stories.filter(s => s.projectId === p.id);
+              const isCritical = projRisks.some(r => r.severity === "Critical");
+              return (
+                <div key={p.id}
+                  className="bg-[#2E2E2E]/30 border border-white/10 rounded-2xl p-6 cursor-pointer hover:border-[#FFE600]/40 hover:bg-[#2E2E2E]/60 transition-all duration-300 group"
+                  onClick={() => onSelectProject(p)}>
+                  <div className="flex items-start gap-5 flex-wrap md:flex-nowrap">
+                    <PulseRing progress={p.progress} status={p.status} size={76} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1.5 flex-wrap">
+                        <h3 className="font-bold text-white text-base group-hover:text-[#FFE600] transition-colors">{p.name}</h3>
+                        <StatusBadge status={p.status} />
+                      </div>
+                      <p className="text-slate-400 text-xs mb-3 line-clamp-1">{p.description}</p>
+                      <div className="flex items-center gap-4 flex-wrap text-[11px] text-slate-500">
+                        <span>Client: <strong className="text-white">{p.client}</strong></span>
+                        <span>·</span>
+                        <Stars count={p.clientStars} size="sm" />
+                        <span>·</span>
+                        <span>PM: <strong className="text-slate-300">{p.pm}</strong></span>
+                        <span>·</span>
+                        <span className={isCritical ? "text-rose-400 font-bold" : ""}>
+                          {projRisks.length} Risk{projRisks.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right min-w-[150px] w-full md:w-auto">
+                      <div className="text-slate-500 text-[10px] uppercase mb-1">Budget Burn</div>
+                      <div className="font-mono text-sm text-white mb-1.5">
+                        ${(p.spent / 1000).toFixed(0)}k <span className="text-slate-500">/ ${(p.budget / 1000).toFixed(0)}k</span>
+                      </div>
+                      <ProgressBar value={(p.spent / p.budget) * 100} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Global Roster Workload Breakdown Widget */}
+        <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-6">
+          <h3 className="text-white text-xs font-bold uppercase tracking-widest mb-4">Team Workload Allocation</h3>
+          {memberWorkload.length === 0 ? (
+            <div className="text-slate-500 text-xs py-4 text-center">All team members have empty backlogs.</div>
+          ) : (
+            <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
+              {memberWorkload.map(item => {
+                const maxPoints = 15;
+                const utilPercent = Math.round((item.points / maxPoints) * 100);
+                return (
+                  <div key={item.name} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">{item.name} <span className="text-slate-500 text-[10px]">({item.role})</span></span>
+                      <span className="text-slate-400 font-mono">{item.points} pts / {item.count} stories ({utilPercent}% Utilized)</span>
+                    </div>
+                    <div className="w-full bg-[#1A1A1A] h-2 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-500 ${utilPercent > 100 ? "bg-red-500" : utilPercent > 70 ? "bg-[#FFE600]" : "bg-white"}`} style={{ width: `${Math.min(utilPercent, 100)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Agile Board Tab ────────────────────────────────────────────────────────
+function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal }) {
+  const [subTab, setSubTab] = useState("backlog");
+  const projectStories = stories.filter(s => s.projectId === projectId);
+  const projectEpics = epics.filter(e => e.projectId === projectId);
+  const projectSprints = sprints.filter(s => s.projectId === projectId);
+
+  // Forms
+  const [showCreateStory, setShowCreateStory] = useState(false);
+  const [editingStory, setEditingStory] = useState(null);
+  const [newStory, setNewStory] = useState({
+    title: "", description: "", priority: "Medium", points: 3, epicId: "", assignee: "", moscow: "Should Have", score: 50
+  });
+
+  const [showCreateSprint, setShowCreateSprint] = useState(false);
+  const [newSprint, setNewSprint] = useState({
+    name: "", goal: "", startDate: "", endDate: "", status: "Future"
+  });
+
+  const [showCreateEpic, setShowCreateEpic] = useState(false);
+  const [newEpic, setNewEpic] = useState({ name: "", description: "" });
+
+  // Filters for Kanban Board
+  const [kanbanAssignee, setKanbanAssignee] = useState("All");
+  const [kanbanPriority, setKanbanPriority] = useState("All");
+  const [kanbanEpic, setKanbanEpic] = useState("All");
+
+  // Re-ordering stories in Backlog
+  const moveStoryOrder = (index, direction) => {
+    const list = [...projectStories];
+    if (direction === "up" && index > 0) {
+      const temp = list[index];
+      list[index] = list[index - 1];
+      list[index - 1] = temp;
+    } else if (direction === "down" && index < list.length - 1) {
+      const temp = list[index];
+      list[index] = list[index + 1];
+      list[index + 1] = temp;
+    }
+    // Update main stories list preserving elements from other projects
+    const otherProjectsStories = stories.filter(s => s.projectId !== projectId);
+    setStories([...otherProjectsStories, ...list]);
+  };
+
+  // AI Story Generator
+  const runAIStoryGenerator = async () => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    setApiLoading(true);
+    try {
+      const result = await callGroq(
+        `Based on this project description: "${proj.name} - ${proj.description}", generate 4 user stories.
+        Return JSON with exactly this key format:
+        { "stories": [ { "title": "User Story Title", "description": "Story details", "priority": "High/Medium/Low", "points": 1/2/3/5/8/13, "epicName": "Core Module" } ] }`
+      );
+      if (result && Array.isArray(result.stories)) {
+        let createdCount = 0;
+        result.stories.forEach(storyData => {
+          let epic = epics.find(e => e.projectId === projectId && e.name.toLowerCase() === storyData.epicName.toLowerCase());
+          let epicId = epic ? epic.id : null;
+          if (!epicId) {
+            epicId = Date.now() + Math.random();
+            const newEpObj = { id: epicId, projectId, name: storyData.epicName, description: "AI Auto Generated Epic", status: "To Do", progress: 0 };
+            setEpics(prev => [...prev, newEpObj]);
+          }
+
+          const storyObj = {
+            id: Date.now() + Math.random(),
+            projectId,
+            epicId,
+            title: storyData.title,
+            description: storyData.description,
+            priority: storyData.priority || "Medium",
+            points: Number(storyData.points) || 3,
+            assignee: "Unassigned",
+            status: "Backlog",
+            sprintId: null,
+            moscow: "Should Have",
+            score: 50
+          };
+          setStories(prev => [...prev, storyObj]);
+          createdCount++;
+        });
+        addNotification(`AI generated ${createdCount} user stories and associated epics successfully.`, "system");
+      }
+    } catch (e) {
+      alert("AI Generation failed: " + e.message);
+    } finally {
+      setApiLoading(false);
+    }
+  };
+
+  // AI Sprint Planner
+  const runAISprintPlanning = async () => {
+    const unassigned = projectStories.filter(s => !s.sprintId);
+    const capacityTotal = employees.length * 15;
+    if (unassigned.length === 0) {
+      alert("No unassigned stories in backlog to plan.");
+      return;
+    }
+    setApiLoading(true);
+    try {
+      const result = await callGroq(
+        `Here is a list of unassigned user stories for our project:
+        ${JSON.stringify(unassigned.map(s => ({ id: s.id, title: s.title, points: s.points, priority: s.priority })))}
+        Total Team Capacity is ${capacityTotal} points.
+        Divide these stories into recommended sprint packages.
+        Return JSON with:
+        { "recommendedSprints": [ { "name": "Sprint 3: Core Implementation", "goal": "Deliver auth validation and setup", "storyIds": [list of numbers], "reason": "string rationale" } ] }`
+      );
+      if (result && Array.isArray(result.recommendedSprints)) {
+        result.recommendedSprints.forEach(sprintRec => {
+          const sprintId = Date.now() + Math.random();
+          const newSp = {
+            id: sprintId,
+            projectId,
+            name: sprintRec.name,
+            goal: sprintRec.goal,
+            startDate: new Date().toISOString().split("T")[0],
+            endDate: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().split("T")[0],
+            status: "Future"
+          };
+          setSprints(prev => [...prev, newSp]);
+          setStories(prev => prev.map(st => {
+            if (sprintRec.storyIds.includes(st.id)) {
+              return { ...st, sprintId };
+            }
+            return st;
+          }));
+        });
+        addNotification(`AI Sprint Planner established ${result.recommendedSprints.length} recommended sprints.`, "system");
+      }
+    } catch (e) {
+      alert("AI Sprint planning failed: " + e.message);
+    } finally {
+      setApiLoading(false);
+    }
+  };
+
+  const handleCreateStorySubmit = (e) => {
+    e.preventDefault();
+    const storyObj = {
+      id: Date.now(),
+      projectId,
+      epicId: newStory.epicId ? Number(newStory.epicId) : null,
+      title: newStory.title,
+      description: newStory.description,
+      priority: newStory.priority,
+      points: Number(newStory.points) || 1,
+      assignee: newStory.assignee || "Unassigned",
+      status: "Backlog",
+      sprintId: null,
+      moscow: newStory.moscow,
+      score: Number(newStory.score) || 50
+    };
+    setStories(prev => [...prev, storyObj]);
+    setNewStory({ title: "", description: "", priority: "Medium", points: 3, epicId: "", assignee: "", moscow: "Should Have", score: 50 });
+    setShowCreateStory(false);
+    addNotification(`Created new User Story: "${storyObj.title}".`, "system");
+  };
+
+  const handleEditStorySubmit = (e) => {
+    e.preventDefault();
+    setStories(prev => prev.map(s => s.id === editingStory.id ? editingStory : s));
+    setEditingStory(null);
+    addNotification(`Updated User Story details.`, "system");
+  };
+
+  const handleCreateSprintSubmit = (e) => {
+    e.preventDefault();
+    const sprintObj = {
+      id: Date.now(),
+      projectId,
+      ...newSprint
+    };
+    setSprints(prev => [...prev, sprintObj]);
+    setNewSprint({ name: "", goal: "", startDate: "", endDate: "", status: "Future" });
+    setShowCreateSprint(false);
+    addNotification(`Sprint "${sprintObj.name}" created successfully.`, "system");
+  };
+
+  const handleCreateEpicSubmit = (e) => {
+    e.preventDefault();
+    const epicObj = {
+      id: Date.now(),
+      projectId,
+      name: newEpic.name,
+      description: newEpic.description,
+      status: "To Do",
+      progress: 0
+    };
+    setEpics(prev => [...prev, epicObj]);
+    setNewEpic({ name: "", description: "" });
+    setShowCreateEpic(false);
+    addNotification(`Epic "${epicObj.name}" created.`, "system");
+  };
+
+  const [apiLoading, setApiLoading] = useState(false);
+
+  return (
+    <div className="space-y-6">
+      {/* Sub tabs nav */}
+      <div className="flex justify-between items-center flex-wrap gap-3">
+        <div className="flex gap-1 bg-[#2E2E2E] p-1 rounded-xl">
+          {["backlog", "sprints", "kanban"].map(t => (
+            <button
+              key={t}
+              onClick={() => setSubTab(t)}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${subTab === t ? "bg-[#FFE600] text-black" : "text-slate-400 hover:text-white"}`}
+            >
+              {t === "backlog" ? "Backlog & Epics" : t === "sprints" ? "Sprint Planning" : "Kanban Board"}
+            </button>
+          ))}
+        </div>
+
+        {apiLoading && <Spinner />}
+
+        <div className="flex gap-2">
+          {subTab === "backlog" && (
+            <button onClick={runAIStoryGenerator} className="px-3.5 py-1.5 bg-[#2E2E2E] border border-[#FFE600]/30 hover:border-[#FFE600] text-[#FFE600] text-xs font-bold rounded-xl transition-all">
+              ✦ AI Generate Stories
+            </button>
+          )}
+          {subTab === "sprints" && (
+            <button onClick={runAISprintPlanning} className="px-3.5 py-1.5 bg-[#2E2E2E] border border-[#FFE600]/30 hover:border-[#FFE600] text-[#FFE600] text-xs font-bold rounded-xl transition-all">
+              ✦ AI Plan Sprints
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 1. BACKLOG VIEW */}
+      {subTab === "backlog" && (
+        <div className="grid lg:grid-cols-[2fr_1.1fr] gap-6">
+          {/* Stories List */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-white text-sm font-bold uppercase tracking-wider">Product Backlog ({projectStories.length})</h3>
+              <button onClick={() => setShowCreateStory(true)} className="px-3 py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded-lg hover:bg-white transition-all">
+                + Add User Story
+              </button>
+            </div>
+
+            {/* Create Story inline Form */}
+            {showCreateStory && (
+              <form onSubmit={handleCreateStorySubmit} className="bg-[#2E2E2E]/60 border border-white/10 rounded-2xl p-5 space-y-3">
+                <h4 className="text-white font-bold text-xs">Create User Story</h4>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <input
+                    value={newStory.title}
+                    onChange={e => setNewStory(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="Story Title"
+                    required
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                  />
+                  <select
+                    value={newStory.epicId}
+                    onChange={e => setNewStory(prev => ({ ...prev, epicId: e.target.value }))}
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                  >
+                    <option value="">No Epic</option>
+                    {projectEpics.map(ep => (
+                      <option key={ep.id} value={ep.id}>{ep.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <textarea
+                  value={newStory.description}
+                  onChange={e => setNewStory(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="As a [User], I want to [Action], so that [Outcome]..."
+                  rows={2}
+                  className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                />
+                <div className="grid grid-cols-4 gap-2">
+                  <select
+                    value={newStory.priority}
+                    onChange={e => setNewStory(prev => ({ ...prev, priority: e.target.value }))}
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  >
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                  </select>
+                  <select
+                    value={newStory.points}
+                    onChange={e => setNewStory(prev => ({ ...prev, points: Number(e.target.value) }))}
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  >
+                    {[1, 2, 3, 5, 8, 13].map(n => <option key={n} value={n}>{n} pts</option>)}
+                  </select>
+                  <select
+                    value={newStory.moscow}
+                    onChange={e => setNewStory(prev => ({ ...prev, moscow: e.target.value }))}
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  >
+                    <option>Must Have</option>
+                    <option>Should Have</option>
+                    <option>Could Have</option>
+                    <option>Wont Have</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={newStory.score}
+                    onChange={e => setNewStory(prev => ({ ...prev, score: Number(e.target.value) }))}
+                    placeholder="Score"
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowCreateStory(false)} className="px-3 py-1 bg-black/40 text-xs rounded-lg">Cancel</button>
+                  <button type="submit" className="px-3 py-1 bg-[#FFE600] text-black text-xs font-bold rounded-lg">Save Story</button>
+                </div>
+              </form>
+            )}
+
+            {/* Edit Story inline Form */}
+            {editingStory && (
+              <form onSubmit={handleEditStorySubmit} className="bg-[#2E2E2E]/60 border border-[#FFE600]/40 rounded-2xl p-5 space-y-3">
+                <h4 className="text-[#FFE600] font-bold text-xs">Edit User Story Details</h4>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <input
+                    value={editingStory.title}
+                    onChange={e => setEditingStory(prev => ({ ...prev, title: e.target.value }))}
+                    required
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+                  />
+                  <select
+                    value={editingStory.epicId || ""}
+                    onChange={e => setEditingStory(prev => ({ ...prev, epicId: e.target.value ? Number(e.target.value) : null }))}
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                  >
+                    <option value="">No Epic</option>
+                    {projectEpics.map(ep => (
+                      <option key={ep.id} value={ep.id}>{ep.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <textarea
+                  value={editingStory.description}
+                  onChange={e => setEditingStory(prev => ({ ...prev, description: e.target.value }))}
+                  rows={2}
+                  className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                />
+                <div className="grid grid-cols-4 gap-2">
+                  <select
+                    value={editingStory.priority}
+                    onChange={e => setEditingStory(prev => ({ ...prev, priority: e.target.value }))}
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  >
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                  </select>
+                  <select
+                    value={editingStory.points}
+                    onChange={e => setEditingStory(prev => ({ ...prev, points: Number(e.target.value) }))}
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  >
+                    {[1, 2, 3, 5, 8, 13].map(n => <option key={n} value={n}>{n} pts</option>)}
+                  </select>
+                  <select
+                    value={editingStory.moscow}
+                    onChange={e => setEditingStory(prev => ({ ...prev, moscow: e.target.value }))}
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  >
+                    <option>Must Have</option>
+                    <option>Should Have</option>
+                    <option>Could Have</option>
+                    <option>Wont Have</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={editingStory.score}
+                    onChange={e => setEditingStory(prev => ({ ...prev, score: Number(e.target.value) }))}
+                    className="w-full bg-black border border-white/20 rounded-lg p-2 text-xs text-white"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setEditingStory(null)} className="px-3 py-1 bg-black/40 text-xs rounded-lg">Cancel</button>
+                  <button type="submit" className="px-3 py-1 bg-[#FFE600] text-black text-xs font-bold rounded-lg">Update</button>
+                </div>
+              </form>
+            )}
+
+            {projectStories.length === 0 ? (
+              <div className="text-slate-500 text-xs py-10 text-center border border-dashed border-white/10 rounded-xl">No stories in backlog. Generate some with AI.</div>
+            ) : (
+              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                {projectStories.map((story, idx) => {
+                  const epic = projectEpics.find(e => e.id === story.epicId);
+                  const sprint = projectSprints.find(s => s.id === story.sprintId);
+                  return (
+                    <div key={story.id} className="bg-[#2E2E2E]/30 border border-white/10 rounded-xl p-4 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        {/* Order controls */}
+                        <div className="flex flex-col gap-1.5">
+                          <button onClick={() => moveStoryOrder(idx, "up")} className="text-[10px] text-slate-500 hover:text-[#FFE600]">▲</button>
+                          <button onClick={() => moveStoryOrder(idx, "down")} className="text-[10px] text-slate-500 hover:text-[#FFE600]">▼</button>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-white font-semibold text-xs cursor-pointer hover:text-[#FFE600]" onClick={() => setStoryDetailModal(story)}>{story.title}</span>
+                            <span className="text-[9px] px-1.5 py-0.2 bg-black/55 text-slate-400 rounded-full border border-white/10">{story.points} pts</span>
+                            <span className="text-[9px] px-1.5 py-0.2 bg-[#FFE600]/10 text-[#FFE600] rounded-full border border-[#FFE600]/20">{story.moscow}</span>
+                            {epic && <span className="text-[9px] px-1.5 py-0.2 bg-indigo-900/30 text-indigo-300 rounded border border-indigo-800/20">{epic.name}</span>}
+                            {sprint && <span className="text-[9px] px-1.5 py-0.2 bg-emerald-950 text-emerald-400 rounded">{sprint.name}</span>}
+                          </div>
+                          <p className="text-slate-400 text-[11px] line-clamp-1">{story.description}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="text-[9px] text-slate-500 uppercase">Score</div>
+                          <div className="font-mono text-xs text-white font-bold">{story.score || 50}</div>
+                        </div>
+                        <button onClick={() => setEditingStory(story)} className="p-1.5 text-xs text-slate-400 hover:text-white bg-black/40 rounded-lg">✎</button>
+                        <button onClick={() => {
+                          setStories(prev => prev.filter(s => s.id !== story.id));
+                          addNotification(`Deleted Story: "${story.title}".`, "system");
+                        }} className="p-1.5 text-xs text-red-400 hover:text-white bg-red-950/20 rounded-lg">✕</button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-            {tab === "team" && (
-              <TeamTab
-                employees={employees}
-                onAddMember={handleAddTeamMember}
-                projects={projects}
-                onAddMemberToProject={handleAddMemberToProject}
-                onDropMemberFromProject={handleDropMemberFromProject}
-                onCreateProject={handleCreateProject}
-                onDeleteProject={handleDeleteProject}
-              />
-            )}
-            {tab === "brd" && <BRDTab />}
-            {tab === "project" && selectedProject && <ProjectDetail project={selectedProject} onBack={handleBack} onDeleteProject={handleDeleteProject} />}
           </div>
-        </main>
+
+          {/* Epics panel */}
+          <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4 h-fit">
+            <div className="flex justify-between items-center">
+              <h3 className="text-white text-xs font-bold uppercase tracking-widest">Project Epics</h3>
+              <button onClick={() => setShowCreateEpic(true)} className="text-[10px] text-[#FFE600] font-bold hover:underline">
+                + Create Epic
+              </button>
+            </div>
+
+            {showCreateEpic && (
+              <form onSubmit={handleCreateEpicSubmit} className="bg-black/60 border border-white/10 rounded-xl p-3 space-y-3">
+                <input
+                  value={newEpic.name}
+                  onChange={e => setNewEpic(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Epic Name"
+                  required
+                  className="w-full bg-black border border-white/20 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                />
+                <input
+                  value={newEpic.description}
+                  onChange={e => setNewEpic(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Description..."
+                  className="w-full bg-black border border-white/20 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                />
+                <button type="submit" className="w-full py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded-lg">Create Epic</button>
+              </form>
+            )}
+
+            <div className="space-y-3">
+              {projectEpics.map(ep => {
+                const epicStories = projectStories.filter(s => s.epicId === ep.id);
+                const totalPts = epicStories.reduce((sum, s) => sum + s.points, 0);
+                return (
+                  <div key={ep.id} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="text-white font-semibold text-xs">{ep.name}</h4>
+                        <p className="text-slate-500 text-[10px]">{ep.description}</p>
+                      </div>
+                      <span className="text-[9px] text-slate-400 font-mono">{epicStories.length} stories ({totalPts} pts)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <ProgressBar value={ep.progress} />
+                      </div>
+                      <span className="text-[10px] text-[#FFE600] font-mono font-bold">{ep.progress}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. SPRINT PLANNING VIEW */}
+      {subTab === "sprints" && (
+        <div className="grid lg:grid-cols-[1.8fr_1.2fr] gap-6">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-white text-sm font-bold uppercase tracking-wider">Active & Future Sprints</h3>
+              <button onClick={() => setShowCreateSprint(true)} className="px-3.5 py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded-lg transition-all">
+                + Create New Sprint
+              </button>
+            </div>
+
+            {showCreateSprint && (
+              <form onSubmit={handleCreateSprintSubmit} className="bg-[#2E2E2E]/60 border border-white/10 rounded-2xl p-5 space-y-3">
+                <h4 className="text-white font-bold text-xs">New Sprint</h4>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <input
+                    value={newSprint.name}
+                    onChange={e => setNewSprint(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="Sprint Name"
+                    required
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                  />
+                  <input
+                    value={newSprint.goal}
+                    onChange={e => setNewSprint(prev => ({ ...prev, goal: e.target.value }))}
+                    placeholder="Sprint Goal"
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                  />
+                  <input
+                    type="date"
+                    value={newSprint.startDate}
+                    onChange={e => setNewSprint(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                  />
+                  <input
+                    type="date"
+                    value={newSprint.endDate}
+                    onChange={e => setNewSprint(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowCreateSprint(false)} className="px-3 py-1 bg-black/40 text-xs rounded-lg">Cancel</button>
+                  <button type="submit" className="px-3 py-1 bg-[#FFE600] text-black text-xs font-bold rounded-lg">Save Sprint</button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-4">
+              {projectSprints.map(sprint => {
+                const sprintStories = projectStories.filter(s => s.sprintId === sprint.id);
+                const totalPoints = sprintStories.reduce((sum, s) => sum + s.points, 0);
+                return (
+                  <div key={sprint.id} className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-3">
+                    <div className="flex justify-between items-start flex-wrap gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-white font-bold text-sm">{sprint.name}</h4>
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${sprint.status === "Active" ? "bg-[#FFE600]/15 text-[#FFE600]" : sprint.status === "Closed" ? "bg-slate-800 text-slate-400" : "bg-black text-white"}`}>
+                            {sprint.status}
+                          </span>
+                        </div>
+                        <p className="text-slate-400 text-xs mt-1">Goal: {sprint.goal}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">{sprint.startDate} to {sprint.endDate}</p>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-xs text-[#FFE600] font-mono font-bold">{totalPoints} pts</span>
+                        <div className="flex gap-2.5 mt-1.5">
+                          {sprint.status === "Future" && (
+                            <button
+                              onClick={() => {
+                                setSprints(prev => prev.map(sp => sp.id === sprint.id ? { ...sp, status: "Active" } : sp));
+                                addNotification(`Sprint "${sprint.name}" is now Active.`, "system");
+                              }}
+                              className="px-2 py-1 bg-[#FFE600] text-black text-[10px] font-bold rounded hover:bg-white"
+                            >
+                              Start Sprint
+                            </button>
+                          )}
+                          {sprint.status === "Active" && (
+                            <button
+                              onClick={() => {
+                                setSprints(prev => prev.map(sp => sp.id === sprint.id ? { ...sp, status: "Closed" } : sp));
+                                addNotification(`Sprint "${sprint.name}" has been Closed.`, "system");
+                              }}
+                              className="px-2 py-1 bg-white text-black text-[10px] font-bold rounded"
+                            >
+                              Close Sprint
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-white/10 pt-3">
+                      <div className="text-slate-500 text-[10px] uppercase mb-2">Sprint Backlog ({sprintStories.length} Stories)</div>
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                        {sprintStories.map(st => (
+                          <div key={st.id} className="flex justify-between items-center bg-black/40 p-2 rounded-lg text-xs">
+                            <span className="text-white hover:underline cursor-pointer" onClick={() => setStoryDetailModal(st)}>{st.title}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-400 font-mono">{st.points} pts</span>
+                              <button onClick={() => {
+                                setStories(prev => prev.map(s => s.id === st.id ? { ...s, sprintId: null } : s));
+                                addNotification(`Removed "${st.title}" from ${sprint.name}.`, "system");
+                              }} className="text-red-400 hover:text-white">✕</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Planning Panel: Drag stories into Sprints */}
+          <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4 h-fit">
+            <h3 className="text-white text-xs font-bold uppercase tracking-widest">Sprint Assignment Backlog</h3>
+            <p className="text-slate-400 text-xs">Easily assign backlog stories to any scheduled sprint.</p>
+
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+              {projectStories.filter(s => !s.sprintId).map(story => (
+                <div key={story.id} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-2.5">
+                  <div className="flex justify-between items-start">
+                    <span className="text-white font-semibold text-xs cursor-pointer hover:underline" onClick={() => setStoryDetailModal(story)}>{story.title}</span>
+                    <span className="text-[10px] font-mono text-[#FFE600]">{story.points} pts</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[10px] text-slate-500">{story.priority} Priority</span>
+                    <select
+                      onChange={e => {
+                        const sId = Number(e.target.value);
+                        if (!sId) return;
+                        setStories(prev => prev.map(s => s.id === story.id ? { ...s, sprintId: sId } : s));
+                        addNotification(`Assigned "${story.title}" to Sprint ID ${sId}.`, "system");
+                      }}
+                      className="bg-[#2E2E2E] border border-white/10 rounded px-2 py-1 text-[10px] text-white"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Send to Sprint...</option>
+                      {projectSprints.filter(sp => sp.status !== "Closed").map(sp => (
+                        <option key={sp.id} value={sp.id}>{sp.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. KANBAN BOARD VIEW */}
+      {subTab === "kanban" && (
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="flex gap-4 flex-wrap bg-[#2E2E2E]/30 p-3 rounded-xl border border-white/10">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 uppercase font-mono">Assignee</span>
+              <select value={kanbanAssignee} onChange={e => setKanbanAssignee(e.target.value)} className="bg-black border border-white/10 rounded-lg p-1.5 text-xs text-white">
+                <option value="All">All Team</option>
+                {employees.map(e => <option key={e.name} value={e.name}>{e.name}</option>)}
+                <option value="Unassigned">Unassigned</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 uppercase font-mono">Priority</span>
+              <select value={kanbanPriority} onChange={e => setKanbanPriority(e.target.value)} className="bg-black border border-white/10 rounded-lg p-1.5 text-xs text-white">
+                <option value="All">All Priorities</option>
+                <option>High</option>
+                <option>Medium</option>
+                <option>Low</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-slate-400 uppercase font-mono">Epic</span>
+              <select value={kanbanEpic} onChange={e => setKanbanEpic(e.target.value)} className="bg-black border border-white/10 rounded-lg p-1.5 text-xs text-white">
+                <option value="All">All Epics</option>
+                {projectEpics.map(ep => <option key={ep.id} value={ep.id}>{ep.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Kanban Columns */}
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 overflow-x-auto pb-4">
+            {["Backlog", "To Do", "In Progress", "Review", "Testing", "Done"].map(col => {
+              const filteredStories = projectStories.filter(s => {
+                if (s.status !== col) return false;
+                if (kanbanAssignee !== "All" && s.assignee !== kanbanAssignee) return false;
+                if (kanbanPriority !== "All" && s.priority !== kanbanPriority) return false;
+                if (kanbanEpic !== "All" && String(s.epicId) !== kanbanEpic) return false;
+                return true;
+              });
+
+              return (
+                <div key={col} className="bg-[#2E2E2E]/10 border border-white/5 rounded-2xl p-3 flex flex-col min-w-[170px] h-[550px]">
+                  <div className="flex justify-between items-center mb-3 pb-2 border-b border-white/10">
+                    <span className="text-white font-bold text-xs uppercase tracking-wider">{col}</span>
+                    <span className="text-[10px] font-mono text-slate-500 bg-black/45 px-2 py-0.5 rounded-full">{filteredStories.length}</span>
+                  </div>
+
+                  <div className="space-y-2.5 overflow-y-auto flex-1 pr-1">
+                    {filteredStories.map(story => {
+                      const storyTasks = tasks.filter(t => t.storyId === story.id);
+                      const completedTasks = storyTasks.filter(t => t.status === "Done").length;
+                      const taskProgress = storyTasks.length > 0 ? Math.round((completedTasks / storyTasks.length) * 100) : 0;
+                      return (
+                        <div key={story.id} className="bg-[#2E2E2E]/50 border border-white/10 rounded-xl p-3 space-y-3.5 hover:border-[#FFE600]/40 transition-all">
+                          <div className="flex justify-between items-start gap-1">
+                            <span onClick={() => setStoryDetailModal(story)} className="text-white font-semibold text-[11px] hover:text-[#FFE600] cursor-pointer hover:underline line-clamp-2">
+                              {story.title}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-[10px] text-slate-400">
+                            <span>Assignee: <strong>{story.assignee || "Unassigned"}</strong></span>
+                            <span className="font-mono text-[#FFE600] font-bold">{story.points} pt</span>
+                          </div>
+
+                          {storyTasks.length > 0 && (
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[9px] text-slate-500">
+                                <span>Tasks checklist</span>
+                                <span>{completedTasks}/{storyTasks.length} ({taskProgress}%)</span>
+                              </div>
+                              <ProgressBar value={taskProgress} />
+                            </div>
+                          )}
+
+                          {/* Simulated Drag & Drop Arrows */}
+                          <div className="flex justify-between items-center border-t border-white/10 pt-2 text-[10px]">
+                            <button
+                              onClick={() => {
+                                const cols = ["Backlog", "To Do", "In Progress", "Review", "Testing", "Done"];
+                                const idx = cols.indexOf(story.status);
+                                if (idx > 0) {
+                                  setStories(prev => prev.map(s => s.id === story.id ? { ...s, status: cols[idx - 1] } : s));
+                                  addNotification(`Moved "${story.title}" to ${cols[idx - 1]} status.`, "system");
+                                }
+                              }}
+                              className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded bg-black/40"
+                              disabled={story.status === "Backlog"}
+                            >
+                              ◀
+                            </button>
+                            <span className="text-[9px] text-slate-600 font-mono">Move</span>
+                            <button
+                              onClick={() => {
+                                const cols = ["Backlog", "To Do", "In Progress", "Review", "Testing", "Done"];
+                                const idx = cols.indexOf(story.status);
+                                if (idx < cols.length - 1) {
+                                  setStories(prev => prev.map(s => s.id === story.id ? { ...s, status: cols[idx + 1] } : s));
+                                  addNotification(`Moved "${story.title}" to ${cols[idx + 1]} status.`, "system");
+                                }
+                              }}
+                              className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded bg-black/40"
+                              disabled={story.status === "Done"}
+                            >
+                              ▶
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Story Detail Modal Component (Collaboration Timeline + AI Task Gen) ─────
+function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories, setStories, epics, sprints, addNotification }) {
+  const [taskName, setTaskName] = useState("");
+  const [taskAssignee, setTaskAssignee] = useState("Unassigned");
+  const [taskPriority, setTaskPriority] = useState("Medium");
+  const [taskDesc, setTaskDesc] = useState("");
+  const [taskDue, setTaskDue] = useState("");
+
+  const [commentText, setCommentText] = useState("");
+  const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
+
+  const storyTasks = tasks.filter(t => t.storyId === story.id);
+  const epic = epics.find(e => e.id === story.epicId);
+  const sprint = sprints.find(s => s.id === story.sprintId);
+
+  // AI Task Generator
+  const runAITaskGenerator = async () => {
+    setApiLoading(true);
+    try {
+      const result = await callGroq(
+        `Generate 3 sub-tasks required to complete the user story: "${story.title} - ${story.description}".
+        Return JSON with exactly this key format:
+        { "tasks": [ { "name": "Task name", "estimateDays": 2, "description": "Action details", "priority": "High/Medium/Low" } ] }`
+      );
+      if (result && Array.isArray(result.tasks)) {
+        result.tasks.forEach(tData => {
+          const tObj = {
+            id: Date.now() + Math.random(),
+            storyId: story.id,
+            projectId: story.projectId,
+            name: tData.name,
+            status: "To Do",
+            priority: tData.priority || "Medium",
+            assignee: "Unassigned",
+            due: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().split("T")[0],
+            description: tData.description || "",
+            attachments: [],
+            comments: []
+          };
+          setTasks(prev => [...prev, tObj]);
+        });
+        addNotification(`AI automatically parsed sub-tasks for story: "${story.title}".`, "system");
+      }
+    } catch (e) {
+      alert("AI task parsing failed: " + e.message);
+    } finally {
+      setApiLoading(false);
+    }
+  };
+
+  const handleCreateTask = (e) => {
+    e.preventDefault();
+    if (!taskName.trim()) return;
+    const tObj = {
+      id: Date.now(),
+      storyId: story.id,
+      projectId: story.projectId,
+      name: taskName,
+      status: "To Do",
+      priority: taskPriority,
+      assignee: taskAssignee,
+      due: taskDue || new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString().split("T")[0],
+      description: taskDesc,
+      attachments: [],
+      comments: []
+    };
+    setTasks(prev => [...prev, tObj]);
+    setTaskName("");
+    setTaskDesc("");
+    addNotification(`Added task "${tObj.name}" to story.`, "system");
+  };
+
+  // Add Collaboration Comment with @mention handling
+  const handleAddComment = (e) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+
+    const mentionRegex = /@(\w+\s?\w*)/g;
+    let match;
+    while ((match = mentionRegex.exec(commentText)) !== null) {
+      const mentionedName = match[1];
+      const matchEmp = employees.find(emp => emp.name.toLowerCase().includes(mentionedName.toLowerCase()));
+      if (matchEmp) {
+        addNotification(`Mention: ${matchEmp.name} was pinged in story: "${story.title}".`, "info");
+      }
+    }
+
+    if (storyTasks.length > 0) {
+      const updated = tasks.map(t => {
+        if (t.storyId === story.id) {
+          return {
+            ...t,
+            comments: [...(t.comments || []), { author: "Admin", text: commentText, time: new Date().toLocaleString() }]
+          };
+        }
+        return t;
+      });
+      setTasks(updated);
+    } else {
+      const dummyTask = {
+        id: Date.now(),
+        storyId: story.id,
+        projectId: story.projectId,
+        name: "Story Conversations & Timeline Log",
+        status: "To Do",
+        priority: "Low",
+        assignee: "System",
+        due: "",
+        description: "Auto generated channel for reviews.",
+        attachments: [],
+        comments: [{ author: "Admin", text: commentText, time: new Date().toLocaleString() }]
+      };
+      setTasks(prev => [...prev, dummyTask]);
+    }
+    setCommentText("");
+    addNotification(`Comment registered on story timeline.`, "system");
+  };
+
+  const handleCommentChange = (val) => {
+    setCommentText(val);
+    if (val.endsWith("@")) {
+      setShowMentionSuggestions(true);
+    } else if (!val.includes("@") || val.endsWith(" ")) {
+      setShowMentionSuggestions(false);
+    }
+  };
+
+  const [apiLoading, setApiLoading] = useState(false);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="bg-[#1e1e1e] border border-white/10 rounded-2xl w-full max-w-4xl p-6 space-y-6 max-h-[90vh] overflow-y-auto shadow-2xl relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">✕</button>
+
+        {/* Story Header */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-[10px] bg-[#FFE600] text-black font-extrabold px-2 py-0.5 rounded">Story ID: {story.id.toString().slice(-4)}</span>
+            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-white/10">{story.moscow}</span>
+            {epic && <span className="text-[10px] bg-indigo-900/30 text-indigo-300 px-2 py-0.5 rounded border border-indigo-700/20">{epic.name}</span>}
+            {sprint && <span className="text-[10px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded">{sprint.name}</span>}
+          </div>
+          <h2 className="text-white font-extrabold text-xl">{story.title}</h2>
+          <p className="text-slate-400 text-xs leading-relaxed">{story.description}</p>
+        </div>
+
+        {/* Task Creation & List */}
+        <div className="grid md:grid-cols-2 gap-6 pt-4 border-t border-white/10">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-white font-bold text-xs uppercase tracking-widest">Tasks List ({storyTasks.length})</h3>
+              <button onClick={runAITaskGenerator} className="text-[10px] text-[#FFE600] font-bold hover:underline">
+                ✦ AI Generate Tasks
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {storyTasks.map(t => (
+                <div key={t.id} className="bg-black/30 border border-white/5 rounded-xl p-3 flex justify-between items-center gap-3">
+                  <div>
+                    <span className="text-white font-medium text-xs block">{t.name}</span>
+                    <span className="text-[10px] text-slate-500">Assignee: {t.assignee} · Due: {t.due}</span>
+                  </div>
+                  <select
+                    value={t.status}
+                    onChange={e => {
+                      const st = e.target.value;
+                      setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: st } : x));
+                      addNotification(`Task "${t.name}" status changed to ${st}.`, "system");
+                    }}
+                    className="bg-[#2E2E2E] border border-white/10 rounded text-[10px] text-white p-1"
+                  >
+                    <option>To Do</option>
+                    <option>In Progress</option>
+                    <option>Done</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {/* Manual Task Add */}
+            <form onSubmit={handleCreateTask} className="bg-[#2E2E2E]/20 p-3.5 rounded-xl border border-white/5 space-y-3">
+              <span className="text-white font-semibold text-[10px] uppercase">Add Task Manually</span>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={taskName}
+                  onChange={e => setTaskName(e.target.value)}
+                  placeholder="Task Name"
+                  required
+                  className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+                />
+                <select value={taskAssignee} onChange={e => setTaskAssignee(e.target.value)} className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white">
+                  <option value="Unassigned">Unassigned</option>
+                  {employees.map(e => <option key={e.name} value={e.name}>{e.name}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={taskDue}
+                  onChange={e => setTaskDue(e.target.value)}
+                  className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+                />
+                <button type="submit" className="bg-[#FFE600] text-black text-xs font-bold rounded hover:bg-white transition-all">Add Task</button>
+              </div>
+            </form>
+          </div>
+
+          {/* Collaboration Comments & Activities Timeline */}
+          <div className="space-y-4">
+            <h3 className="text-white font-bold text-xs uppercase tracking-widest">Collaboration Timeline</h3>
+
+            {/* Comments Timeline */}
+            <div className="space-y-3 max-h-48 overflow-y-auto pr-1 text-xs">
+              {storyTasks.flatMap(t => t.comments || []).length === 0 ? (
+                <div className="text-slate-500 text-center py-6">No discussions yet. Post a comment.</div>
+              ) : (
+                storyTasks.flatMap(t => t.comments || []).map((c, i) => (
+                  <div key={i} className="bg-black/45 border border-white/5 p-3 rounded-xl space-y-1">
+                    <div className="flex justify-between text-[9px] text-slate-500">
+                      <strong className="text-[#FFE600]">{c.author}</strong>
+                      <span>{c.time}</span>
+                    </div>
+                    <p className="text-slate-300 font-sans">{c.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Post Comments Form */}
+            <form onSubmit={handleAddComment} className="space-y-2 relative">
+              <textarea
+                value={commentText}
+                onChange={e => handleCommentChange(e.target.value)}
+                placeholder="Write a message (@name to mention)..."
+                rows={2}
+                className="w-full bg-black border border-white/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFE600]"
+              />
+
+              {showMentionSuggestions && (
+                <div className="absolute bottom-12 left-0 right-0 bg-[#2E2E2E] border border-white/10 rounded-xl max-h-28 overflow-y-auto z-10 p-1">
+                  {employees.map(emp => (
+                    <button
+                      key={emp.name}
+                      type="button"
+                      onClick={() => {
+                        setCommentText(prev => prev.slice(0, -1) + `@${emp.name} `);
+                        setShowMentionSuggestions(false);
+                      }}
+                      className="w-full text-left text-xs text-white hover:bg-white/10 px-2 py-1 rounded"
+                    >
+                      {emp.name} ({emp.role})
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <button type="submit" className="w-full py-2 bg-white hover:bg-[#FFE600] text-black font-bold text-xs rounded-xl transition-all">
+                Post Comment
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Team Tab Component ──────────────────────────────────────────────────────
+function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDropMemberFromProject, onCreateProject, onDeleteProject }) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [newMember, setNewMember] = useState({ name: "", role: "BA", specialty: "", assignedPm: "", skillStars: 4 });
+
+  const activeProj = projects.find(p => p.id === Number(selectedProjectId));
+
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    if (!newMember.name.trim()) return;
+    onAddMember({
+      name: newMember.name,
+      role: newMember.role,
+      specialty: newMember.specialty || newMember.role,
+      assignedPm: newMember.assignedPm || "Unassigned",
+      skillStars: Number(newMember.skillStars) || 4,
+      projects: 0,
+      available: true
+    });
+    setNewMember({ name: "", role: "BA", specialty: "", assignedPm: "", skillStars: 4 });
+    setShowAddForm(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid md:grid-cols-[1.8fr_1.2fr] gap-6">
+        {/* Allocations workspace */}
+        <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-white text-sm font-bold uppercase tracking-wider">Project Team Allocation</h3>
+            <select
+              value={selectedProjectId}
+              onChange={e => setSelectedProjectId(e.target.value)}
+              className="bg-black border border-white/20 rounded-lg px-3 py-1 text-xs text-white"
+            >
+              <option value="">Choose Active Project...</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          {activeProj ? (
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* Allocated Members */}
+              <div className="bg-black/45 p-4 rounded-xl border border-white/5 space-y-3">
+                <span className="text-slate-400 text-xs font-bold block border-b border-white/10 pb-1.5">Project Team ({activeProj.team?.length || 0})</span>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {activeProj.team?.map((mem, i) => (
+                    <div key={i} className="flex justify-between items-center bg-[#2E2E2E]/20 p-2 rounded-lg text-xs">
+                      <div>
+                        <span className="text-white font-medium block">{mem.name}</span>
+                        <span className="text-[10px] text-slate-500">{mem.role}</span>
+                      </div>
+                      <button onClick={() => onDropMemberFromProject(mem, activeProj.id)} className="text-red-400 hover:text-white">Drop</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Roster Pool */}
+              <div className="bg-black/45 p-4 rounded-xl border border-white/5 space-y-3">
+                <span className="text-slate-400 text-xs font-bold block border-b border-white/10 pb-1.5">Roster Pool</span>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {employees.filter(emp => !activeProj.team?.some(t => t.name === emp.name)).map(emp => (
+                    <div key={emp.name} className="flex justify-between items-center bg-[#2E2E2E]/20 p-2 rounded-lg text-xs">
+                      <div>
+                        <span className="text-white font-medium block">{emp.name}</span>
+                        <span className="text-[10px] text-slate-500">{emp.role} · {emp.specialty}</span>
+                      </div>
+                      <button onClick={() => onAddMemberToProject(emp, activeProj.id)} className="text-[#FFE600] hover:text-white">Assign</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-slate-500 text-xs text-center py-10">Select an active project above to start allocating team resources.</div>
+          )}
+        </div>
+
+        {/* Add roster member */}
+        <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4 h-fit">
+          <div className="flex justify-between items-center">
+            <h3 className="text-white text-xs font-bold uppercase tracking-widest">Roster Pool Directory</h3>
+            <button onClick={() => setShowAddForm(!showAddForm)} className="text-xs text-[#FFE600] font-bold hover:underline">
+              {showAddForm ? "Hide Form" : "+ Add Employee"}
+            </button>
+          </div>
+
+          {showAddForm && (
+            <form onSubmit={handleFormSubmit} className="bg-black/60 p-4 border border-white/10 rounded-xl space-y-3">
+              <input
+                value={newMember.name}
+                onChange={e => setNewMember(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Full Name"
+                required
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              />
+              <select
+                value={newMember.role}
+                onChange={e => setNewMember(prev => ({ ...prev, role: e.target.value }))}
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              >
+                <option>BA</option>
+                <option>Lead Dev</option>
+                <option>iOS Dev</option>
+                <option>Android Dev</option>
+                <option>QA</option>
+                <option>Architect</option>
+                <option>Security</option>
+              </select>
+              <input
+                value={newMember.specialty}
+                onChange={e => setNewMember(prev => ({ ...prev, specialty: e.target.value }))}
+                placeholder="Specialty (e.g. Swift, HIPAA)"
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              />
+              <button type="submit" className="w-full py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded">Save to Roster</button>
+            </form>
+          )}
+
+          <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+            {employees.map(emp => (
+              <div key={emp.name} className="bg-black/40 border border-white/5 rounded-xl p-3 flex justify-between items-center text-xs">
+                <div>
+                  <span className="text-white font-bold block">{emp.name}</span>
+                  <span className="text-[10px] text-slate-400">{emp.role} · {emp.specialty}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] bg-white/5 border border-white/10 text-slate-300 px-1.5 py-0.2 rounded font-mono">
+                    Score: {scoreMember(emp)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── BRD Generator Tab Component (Enhanced Prompt + Create Project) ─────────
+function BRDTab({ projects, setProjects, stories, setStories, addNotification }) {
+  const [form, setForm] = useState({ problem: "", goal: "", stakeholders: "", constraints: "", assumptions: "", clientName: "", projectType: "Healthcare SaaS" });
+  const [brd, setBrd] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("prismpm.groqApiKey") || "");
+
+  useEffect(() => {
+    if (apiKey) localStorage.setItem("prismpm.groqApiKey", apiKey);
+  }, [apiKey]);
+
+  const generateBRD = async () => {
+    if (!form.problem || !form.goal || !apiKey) return;
+    setLoading(true);
+    setBrd(null);
+    try {
+      const result = await callGroq(
+        `Generate a professional Business Requirements Document (BRD).
+        Client: ${form.clientName || "TBD"}
+        Project Type: ${form.projectType}
+        Business Problem: ${form.problem}
+        Goal: ${form.goal}
+        Stakeholders: ${form.stakeholders}
+        Constraints: ${form.constraints}
+        Assumptions: ${form.assumptions}
+
+        Return JSON with exact keys:
+        {
+          "executiveSummary": "string",
+          "businessObjectives": [list],
+          "projectScope": { "inScope": [list], "outOfScope": [list] },
+          "stakeholders": [ {"role": "string", "name": "string", "responsibility": "string"} ],
+          "functionalRequirements": [list],
+          "nonFunctionalRequirements": [list],
+          "userPersonas": [ {"name": "string", "role": "string", "description": "string", "goals": "string"} ],
+          "userStories": [ {"asA": "string", "iWantTo": "string", "soThat": "string", "acceptanceCriteria": "string", "points": 3} ],
+          "risks": [list of strings],
+          "assumptions": [list],
+          "successMetrics": [list]
+        }`,
+        "",
+        apiKey
+      );
+      setBrd(result);
+      addNotification("AI Business Requirements Document created successfully.", "system");
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateProjectFromBRD = () => {
+    if (!brd) return;
+    const projectId = Date.now();
+    const newProj = {
+      id: projectId,
+      name: `${form.clientName || "New Client"} ${form.projectType}`,
+      client: form.clientName || "Enterprise Client",
+      clientStars: 4,
+      pm: "Sarah Chen",
+      ba: "Marcus Webb",
+      type: form.projectType,
+      status: "On Track",
+      progress: 0,
+      plannedDays: 120,
+      elapsed: 0,
+      description: brd.executiveSummary || "AI Generated Project.",
+      budget: 150000,
+      spent: 0,
+      team: [
+        { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Fintech" },
+        { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking" }
+      ]
+    };
+    setProjects(prev => [newProj, ...prev]);
+
+    if (Array.isArray(brd.userStories)) {
+      const storyObjects = brd.userStories.map((us, i) => ({
+        id: Date.now() + i + Math.random(),
+        projectId,
+        epicId: null,
+        title: us.iWantTo || `Requirement Story ${i + 1}`,
+        description: `As a ${us.asA || "user"}, I want to ${us.iWantTo || "action"} so that ${us.soThat || "outcome"}. AC: ${us.acceptanceCriteria || ""}`,
+        priority: "Medium",
+        points: us.points || 3,
+        assignee: "Unassigned",
+        status: "Backlog",
+        sprintId: null,
+        moscow: "Should Have",
+        score: 60
+      }));
+      setStories(prev => [...prev, ...storyObjects]);
+    }
+
+    addNotification(`Imported project and user stories from generated BRD.`, "system");
+    alert("Project and Stories successfully created!");
+  };
+
+  const exportBRDToTXT = () => {
+    if (!brd) return;
+    const fileContent = `
+========================================================================
+                      BUSINESS REQUIREMENTS DOCUMENT
+========================================================================
+Project Type: ${form.projectType}
+Client: ${form.clientName || "Enterprise Client"}
+Generated At: ${new Date().toLocaleString()}
+
+EXECUTIVE SUMMARY
+-----------------
+${brd.executiveSummary || "N/A"}
+
+BUSINESS OBJECTIVES
+-------------------
+${brd.businessObjectives?.map((o, i) => `${i + 1}. ${o}`).join("\n") || "N/A"}
+
+SCOPE OF WORK
+-------------
+In Scope:
+${brd.projectScope?.inScope?.map(s => ` - ${s}`).join("\n") || "N/A"}
+Out of Scope:
+${brd.projectScope?.outOfScope?.map(s => ` - ${s}`).join("\n") || "N/A"}
+
+USER STORIES
+------------
+${brd.userStories?.map((us, i) => `US ${i + 1}: As a ${us.asA}, I want to ${us.iWantTo} so that ${us.soThat}`).join("\n") || "N/A"}
+    `;
+    const blob = new Blob([fileContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `BRD_${form.clientName || "Project"}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-6 space-y-4">
+        <h3 className="text-[#FFE600] font-bold text-sm uppercase tracking-widest flex items-center gap-2">
+          <span>✦</span> Enhanced AI BRD Generator
+        </h3>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Client Name</label>
+            <input value={form.clientName} onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder="NexaBank Ltd" className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Project Type</label>
+            <input value={form.projectType} onChange={e => setForm(f => ({ ...f, projectType: e.target.value }))} className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Business Problem *</label>
+            <textarea value={form.problem} onChange={e => setForm(f => ({ ...f, problem: e.target.value }))} rows={2} placeholder="Explain the business bottleneck..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" required />
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Project Goal *</label>
+            <textarea value={form.goal} onChange={e => setForm(f => ({ ...f, goal: e.target.value }))} rows={2} placeholder="Define the end state target..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" required />
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-3">
+          <input value={form.stakeholders} onChange={e => setForm(f => ({ ...f, stakeholders: e.target.value }))} placeholder="Stakeholders (e.g. Risk officers)" className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white" />
+          <input value={form.constraints} onChange={e => setForm(f => ({ ...f, constraints: e.target.value }))} placeholder="Constraints (e.g. Budget ceiling)" className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white" />
+          <input value={form.assumptions} onChange={e => setForm(f => ({ ...f, assumptions: e.target.value }))} placeholder="Assumptions" className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white" />
+        </div>
+
+        <div>
+          <label className="text-slate-400 text-xs uppercase mb-1 block">Groq API Key</label>
+          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Paste Groq API Key..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+        </div>
+
+        <button onClick={generateBRD} disabled={loading} className="w-full py-2.5 bg-[#FFE600] text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all">
+          {loading ? "Generating specifications..." : "✦ AI Generate Specs"}
+        </button>
+      </div>
+
+      {brd && (
+        <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-6 space-y-6">
+          <div className="flex justify-between items-center border-b border-white/10 pb-4">
+            <h4 className="text-white font-bold text-sm">Generated Specifications</h4>
+            <div className="flex gap-2">
+              <button onClick={handleCreateProjectFromBRD} className="px-3.5 py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded-lg">
+                Create Project from BRD
+              </button>
+              <button onClick={exportBRDToTXT} className="px-3.5 py-1.5 bg-white text-black text-xs font-bold rounded-lg">
+                Export Report (.txt)
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <span className="text-[#FFE600] text-[10px] font-bold uppercase tracking-wider">Executive Summary</span>
+              <p className="text-slate-300 text-xs leading-relaxed">{brd.executiveSummary}</p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-black/30 p-4 rounded-xl">
+                <span className="text-white text-xs font-bold block mb-2">Business Objectives</span>
+                <ul className="list-disc pl-4 text-xs text-slate-300 space-y-1">
+                  {brd.businessObjectives?.map((o, i) => <li key={i}>{o}</li>)}
+                </ul>
+              </div>
+              <div className="bg-black/30 p-4 rounded-xl">
+                <span className="text-white text-xs font-bold block mb-2">Project Scope (In-Scope)</span>
+                <ul className="list-disc pl-4 text-xs text-[#FFE600] space-y-1">
+                  {brd.projectScope?.inScope?.map((o, i) => <li key={i}>{o}</li>)}
+                </ul>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-white text-xs font-bold block">User Stories ({brd.userStories?.length || 0})</span>
+              <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
+                {brd.userStories?.map((us, i) => (
+                  <div key={i} className="bg-black/35 p-3 rounded-lg border border-white/5 text-xs">
+                    <strong>As a:</strong> {us.asA} | <strong>I want to:</strong> {us.iWantTo} | <strong>So that:</strong> {us.soThat}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Project Detail Page (SVGs, Analytics, and AI Risks) ────────────────────
+function ProjectDetail({
+  project,
+  projects,
+  setProjects,
+  epics,
+  setEpics,
+  stories,
+  setStories,
+  sprints,
+  setSprints,
+  tasks,
+  setTasks,
+  risks,
+  setRisks,
+  employees,
+  onBack,
+  onDeleteProject,
+  addNotification
+}) {
+  const [subTab, setSubTab] = useState("overview");
+  const [apiLoading, setApiLoading] = useState(false);
+  const [riskFilter, setRiskFilter] = useState(null);
+  const [aiInput, setAiInput] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("prismpm.groqApiKey") || "");
+
+  const projectStories = stories.filter(s => s.projectId === project.id);
+  const projectRisks = risks.filter(r => r.projectId === project.id);
+  const projectEpics = epics.filter(e => e.projectId === project.id);
+
+  const hasWeeklyData = project.weeklyLogs && project.weeklyLogs.length > 0;
+  const [selectedWeek, setSelectedWeek] = useState(1);
+
+  // If we have weekly data, get current week's log
+  const currentWeekLog = hasWeeklyData
+    ? project.weeklyLogs.find(w => w.week === selectedWeek) || project.weeklyLogs[0]
+    : null;
+
+  // Dynamically calculate values based on selected week (if generated) or project states
+  const totalStoriesCount = projectStories.length;
+  const completedStoriesCount = projectStories.filter(s => s.status === "Done").length;
+  
+  const totalPoints = projectStories.reduce((sum, s) => sum + s.points, 0);
+  const completedPoints = hasWeeklyData && currentWeekLog
+    ? currentWeekLog.donePoints
+    : projectStories.filter(s => s.status === "Done").reduce((sum, s) => sum + s.points, 0);
+
+  const progress = hasWeeklyData && currentWeekLog
+    ? Math.round((currentWeekLog.donePoints / (currentWeekLog.donePoints + currentWeekLog.remainingPoints)) * 100) || 0
+    : (totalPoints > 0 ? Math.round((completedStoriesCount / totalPoints) * 100) : 0);
+
+  const elapsed = hasWeeklyData ? selectedWeek * 7 : 0;
+  const spent = hasWeeklyData && currentWeekLog
+    ? Math.round(project.budget * (currentWeekLog.donePoints / (currentWeekLog.donePoints + currentWeekLog.remainingPoints)) * 0.9) || 0
+    : 0;
+
+  const delayDays = hasWeeklyData && currentWeekLog ? currentWeekLog.delayDays : 0;
+  
+  // Filter risks active up to the selected week
+  const activeRisks = hasWeeklyData
+    ? projectRisks.filter(r => r.encounteredWeek <= selectedWeek)
+    : projectRisks;
+
+  const handleRunAIGenerator = async () => {
+    if (!aiInput.trim()) {
+      alert("Please provide some project descriptions or requirements text.");
+      return;
+    }
+    const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
+    if (!key) {
+      alert("Please provide a Groq API key.");
+      return;
+    }
+    setApiLoading(true);
+    try {
+      const prompt = `Based on the following project information:
+Name: ${project.name}
+Description: ${project.description}
+Raw documents/Requirements: ${aiInput}
+
+Generate a complete project setup with 3-4 epics, 6-8 user stories, 3 sprints, 2-3 tasks nested under each user story, 3-4 risks, and a week-by-week tracking log for 4 weeks.
+For Sprints, specify start and end dates grouped by week (e.g. Week 1, Week 2).
+For Risks, specify which week they were encountered (from 1 to 4).
+For the week-by-week tracking log (4 weeks), specify:
+- week: number (1 to 4)
+- label: string (e.g. "Week 1")
+- donePoints: number of story points completed in that week
+- remainingPoints: number of story points remaining at that week
+- delayDays: calculated lag/delay in days for that week (e.g. 0, 2, 4)
+- risks: array of strings of risks encountered in that week
+- burndownPoints: array of numbers representing daily burndown points for that week (7 values per week)
+- velocityTarget: target velocity for that week (number)
+- velocityActual: actual velocity achieved in that week (number)
+
+Return a single JSON object with EXACTLY this structure:
+{
+  "epics": [
+    { "name": "Epic Name", "description": "Epic description" }
+  ],
+  "stories": [
+    { "title": "Story Title", "description": "As a... I want to... So that...", "points": 5, "priority": "High", "moscow": "Must Have", "epicName": "Epic Name", "sprintName": "Sprint 1", "status": "Done" }
+  ],
+  "sprints": [
+    { "name": "Sprint 1", "goal": "Sprint goal", "startDate": "2026-06-01", "endDate": "2026-06-14", "status": "Closed" }
+  ],
+  "tasks": [
+    { "storyTitle": "Story Title", "name": "Task Name", "status": "Done", "priority": "High", "due": "2026-06-05", "description": "Task description" }
+  ],
+  "risks": [
+    { "title": "Risk Title", "severity": "High", "impact": "Impact description", "probability": 70, "category": "Technical", "mitigationPlan": "Mitigation details", "encounteredWeek": 2 }
+  ],
+  "weeklyLogs": [
+    {
+      "week": 1,
+      "label": "Week 1",
+      "donePoints": 8,
+      "remainingPoints": 22,
+      "delayDays": 1,
+      "risks": ["Risk details"],
+      "burndownPoints": [30, 28, 28, 25, 25, 22, 22],
+      "velocityTarget": 10,
+      "velocityActual": 8
+    },
+    {
+      "week": 2,
+      "label": "Week 2",
+      "donePoints": 15,
+      "remainingPoints": 15,
+      "delayDays": 2,
+      "risks": ["Resource bottleneck"],
+      "burndownPoints": [22, 20, 18, 18, 15, 15, 15],
+      "velocityTarget": 10,
+      "velocityActual": 7
+    },
+    {
+      "week": 3,
+      "label": "Week 3",
+      "donePoints": 25,
+      "remainingPoints": 5,
+      "delayDays": 1,
+      "risks": [],
+      "burndownPoints": [15, 12, 10, 8, 8, 5, 5],
+      "velocityTarget": 10,
+      "velocityActual": 10
+    },
+    {
+      "week": 4,
+      "label": "Week 4",
+      "donePoints": 30,
+      "remainingPoints": 0,
+      "delayDays": 0,
+      "risks": [],
+      "burndownPoints": [5, 3, 2, 0, 0, 0, 0],
+      "velocityTarget": 10,
+      "velocityActual": 5
+    }
+  ]
+}`;
+
+      const result = await callGroq(prompt, "You are an expert project manager AI. Always respond with valid JSON only.", key);
+      if (result) {
+        const epicMap = {};
+        const sprintMap = {};
+        const storyMap = {};
+
+        const generatedEpics = (result.epics || []).map(ep => {
+          const id = Date.now() + Math.random();
+          epicMap[ep.name] = id;
+          return {
+            id,
+            projectId: project.id,
+            name: ep.name,
+            description: ep.description || "",
+            status: "To Do",
+            progress: 0
+          };
+        });
+
+        const generatedSprints = (result.sprints || []).map(sp => {
+          const id = Date.now() + Math.random();
+          sprintMap[sp.name] = id;
+          return {
+            id,
+            projectId: project.id,
+            name: sp.name,
+            goal: sp.goal || "",
+            startDate: sp.startDate || "",
+            endDate: sp.endDate || "",
+            status: sp.status || "Future"
+          };
+        });
+
+        const generatedStories = (result.stories || []).map(st => {
+          const id = Date.now() + Math.random();
+          storyMap[st.title] = id;
+          return {
+            id,
+            projectId: project.id,
+            epicId: epicMap[st.epicName] || null,
+            sprintId: sprintMap[st.sprintName] || null,
+            title: st.title,
+            description: st.description || "",
+            points: Number(st.points) || 3,
+            priority: st.priority || "Medium",
+            moscow: st.moscow || "Should Have",
+            status: st.status || "To Do",
+            score: 50
+          };
+        });
+
+        const generatedTasks = (result.tasks || []).map(tk => {
+          return {
+            id: Date.now() + Math.random(),
+            storyId: storyMap[tk.storyTitle] || null,
+            projectId: project.id,
+            name: tk.name,
+            status: tk.status || "To Do",
+            priority: tk.priority || "Medium",
+            due: tk.due || "",
+            description: tk.description || "",
+            attachments: [],
+            comments: []
+          };
+        });
+
+        const generatedRisks = (result.risks || []).map(rk => {
+          return {
+            id: Date.now() + Math.random(),
+            projectId: project.id,
+            title: rk.title,
+            severity: rk.severity || "Medium",
+            impact: rk.impact || "",
+            probability: Number(rk.probability) || 50,
+            category: rk.category || "Technical",
+            mitigationPlan: rk.mitigationPlan || "",
+            encounteredWeek: Number(rk.encounteredWeek) || 1
+          };
+        });
+
+        setEpics(prev => [...prev.filter(e => e.projectId !== project.id), ...generatedEpics]);
+        setSprints(prev => [...prev.filter(s => s.projectId !== project.id), ...generatedSprints]);
+        setStories(prev => [...prev.filter(s => s.projectId !== project.id), ...generatedStories]);
+        setTasks(prev => [...prev.filter(t => t.projectId !== project.id), ...generatedTasks]);
+        setRisks(prev => [...prev.filter(r => r.projectId !== project.id), ...generatedRisks]);
+
+        if (apiKey) {
+          localStorage.setItem("prismpm.groqApiKey", apiKey);
+        }
+
+        setProjects(prev => prev.map(p => {
+          if (p.id === project.id) {
+            return {
+              ...p,
+              weeklyLogs: result.weeklyLogs || []
+            };
+          }
+          return p;
+        }));
+
+        addNotification(`AI successfully generated full project setup and 4 weekly logs.`, "system");
+        setSelectedWeek(1);
+        alert("Project setup successfully generated!");
+      }
+    } catch (e) {
+      alert("AI generation failed: " + e.message);
+    } finally {
+      setApiLoading(false);
+    }
+  };
+
+  const exportProjectReport = () => {
+    const reportTxt = `
+========================================================================
+                         PROJECT STATUS REPORT
+========================================================================
+Project Name: ${project.name}
+Client: ${project.client}
+Overall Progress: ${progress}%
+Target Budget: $${project.budget.toLocaleString()} | Spent: $${spent.toLocaleString()}
+Story Completion Rate: ${completedStoriesCount}/${totalStoriesCount} (${Math.round((completedStoriesCount/totalStoriesCount)*100) || 0}%)
+Active Week: Week ${selectedWeek}
+Delay/Lag: ${delayDays} Days
+
+RISKS REGISTER
+--------------
+${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: ${r.mitigationPlan}`).join("\n")}
+    `;
+    const blob = new Blob([reportTxt], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `StatusReport_${project.name}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const getRiskScore = (r) => {
+    const p = Math.ceil(r.probability / 20);
+    let impVal = 3;
+    if (r.severity === "Low") impVal = 1;
+    if (r.severity === "Medium") impVal = 3;
+    if (r.severity === "High") impVal = 4;
+    if (r.severity === "Critical") impVal = 5;
+    return { x: p, y: impVal };
+  };
+
+  const heatmapData = Array.from({ length: 5 }, (_, yIndex) => {
+    const y = 5 - yIndex;
+    return Array.from({ length: 5 }, (_, xIndex) => {
+      const x = xIndex + 1;
+      const matches = activeRisks.filter(r => {
+        const coords = getRiskScore(r);
+        return coords.x === x && coords.y === y;
+      });
+      return { x, y, count: matches.length, items: matches };
+    });
+  });
+
+  const getEpicWeeks = (epicId) => {
+    const epicStories = projectStories.filter(s => s.epicId === epicId);
+    if (epicStories.length === 0) return { start: 1, end: 1 };
+    let start = 4;
+    let end = 1;
+    epicStories.forEach(s => {
+      const sprint = sprints.find(sp => sp.id === s.sprintId);
+      if (sprint) {
+        const sprintIndex = sprints.filter(sp => sp.projectId === project.id).findIndex(sp => sp.id === sprint.id);
+        const sprintStartWeek = sprintIndex >= 0 ? sprintIndex * 2 + 1 : 1;
+        const sprintEndWeek = sprintStartWeek + 1;
+        if (sprintStartWeek < start) start = sprintStartWeek;
+        if (sprintEndWeek > end) end = sprintEndWeek;
+      }
+    });
+    return { start: Math.max(1, start), end: Math.min(4, end) };
+  };
+
+  // Build points path for Burndown
+  let burndownPointsStr = "";
+  if (hasWeeklyData) {
+    const totalWeeks = project.weeklyLogs.length;
+    const actualPoints = [];
+    for (let i = 0; i < selectedWeek; i++) {
+      const log = project.weeklyLogs[i];
+      const x = 20 + (i / (totalWeeks - 1 || 1)) * 260;
+      const totalPt = log.donePoints + log.remainingPoints;
+      const ratio = totalPt > 0 ? (log.remainingPoints / totalPt) : 1;
+      const y = 20 + ratio * 110;
+      actualPoints.push(`${x},${y}`);
+    }
+    burndownPointsStr = actualPoints.join(" ");
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <button onClick={onBack} className="text-slate-400 hover:text-[#FFE600] text-xs font-semibold uppercase tracking-wider">
+          ← Back to Portfolio
+        </button>
+        <div className="flex gap-2">
+          <button onClick={exportProjectReport} className="px-3.5 py-1.5 bg-[#2E2E2E] border border-white/10 text-white text-xs font-bold rounded-xl">
+            Export Report (.txt)
+          </button>
+          <button onClick={() => onDeleteProject(project.id)} className="px-3.5 py-1.5 bg-red-950/40 border border-red-800/20 text-red-400 text-xs font-bold rounded-xl">
+            Delete Project
+          </button>
+        </div>
+      </div>
+
+      {/* Project info card */}
+      <div className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-6">
+        <div className="flex justify-between items-start flex-wrap gap-4">
+          <div className="space-y-2">
+            <h2 className="text-white text-2xl font-extrabold">{project.name}</h2>
+            <p className="text-slate-400 text-xs">{project.description}</p>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-slate-500 uppercase block">Progress Rate</span>
+            <span className="text-2xl font-mono font-bold text-[#FFE600]">{progress}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Week-by-Week projection/history control */}
+      {hasWeeklyData ? (
+        <div className="bg-[#2E2E2E]/30 border border-white/10 rounded-2xl p-5 space-y-4">
+          <div className="flex justify-between items-center flex-wrap gap-2">
+            <span className="text-white text-xs font-bold uppercase tracking-widest">
+              Selected Execution Week: <strong className="text-[#FFE600] font-mono">Week {selectedWeek}</strong>
+            </span>
+            <div className="flex gap-1.5 flex-wrap">
+              {project.weeklyLogs.map(log => (
+                <button
+                  key={log.week}
+                  onClick={() => setSelectedWeek(log.week)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all ${
+                    selectedWeek === log.week ? "bg-[#FFE600] text-black" : "bg-black/45 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  W{log.week}
+                </button>
+              ))}
+            </div>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max={project.weeklyLogs.length}
+            value={selectedWeek}
+            onChange={e => setSelectedWeek(Number(e.target.value))}
+            className="w-full accent-[#FFE600] cursor-pointer"
+          />
+        </div>
+      ) : (
+        <div className="bg-amber-950/20 border border-amber-800/30 rounded-2xl p-4 text-xs text-amber-300 flex justify-between items-center">
+          <span>⚠️ This project is a clean/blank slate. Please run the AI Generator to populate the weekly data.</span>
+        </div>
+      )}
+
+      {/* Sub sections nav */}
+      <div className="flex gap-1 bg-[#2E2E2E] p-1 rounded-xl w-fit">
+        {["overview", "analytics", "risks", "AI Setup"].map(t => (
+          <button
+            key={t}
+            onClick={() => setSubTab(t)}
+            className={`px-4 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${subTab === t ? "bg-[#FFE600] text-black" : "text-slate-400 hover:text-white"}`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* Overview */}
+      {subTab === "overview" && (
+        <div className="space-y-6">
+          <div className="grid md:grid-cols-4 gap-4">
+            <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 text-center">
+              <span className="text-slate-500 text-xs font-bold uppercase block mb-1">Story Points Complete</span>
+              <div className="font-mono text-3xl font-black text-white">
+                {completedPoints} <span className="text-slate-600 text-lg">/ {totalPoints || 0} pts</span>
+              </div>
+            </div>
+            <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 text-center">
+              <span className="text-slate-500 text-xs font-bold uppercase block mb-1">Elapsed Timeline</span>
+              <div className="font-mono text-3xl font-black text-white">
+                {elapsed} <span className="text-slate-600 text-lg">/ {project.plannedDays} Days</span>
+              </div>
+            </div>
+            <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 text-center">
+              <span className="text-slate-500 text-xs font-bold uppercase block mb-1">Timeline Delay / Lag</span>
+              <div className={`font-mono text-3xl font-black ${delayDays > 0 ? "text-red-400" : "text-white"}`}>
+                {delayDays} <span className="text-slate-600 text-lg">Days</span>
+              </div>
+            </div>
+            <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 text-center">
+              <span className="text-slate-500 text-xs font-bold uppercase block mb-1">Total Epics</span>
+              <div className="font-mono text-3xl font-black text-white">{projectEpics.length}</div>
+            </div>
+          </div>
+
+          {hasWeeklyData && currentWeekLog && currentWeekLog.risks && currentWeekLog.risks.length > 0 && (
+            <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5">
+              <h4 className="text-white text-xs font-bold uppercase tracking-widest mb-3">Risks Encountered in Week {selectedWeek}</h4>
+              <ul className="list-disc pl-4 text-xs text-slate-300 space-y-1.5">
+                {currentWeekLog.risks.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Analytics (SVG Burndown and Velocity, plus Gantt Chart) */}
+      {subTab === "analytics" && (
+        <div className="space-y-6">
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* SVG Burndown Chart */}
+            <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
+              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Sprint Burndown Chart</h4>
+              <div className="w-full flex justify-center bg-black/40 p-3 rounded-xl min-h-[160px] items-center">
+                {!hasWeeklyData ? (
+                  <span className="text-slate-500 text-xs">No Burndown Data. Run AI Generator.</span>
+                ) : (
+                  <svg viewBox="0 0 300 150" className="w-full max-w-sm">
+                    <line x1="20" y1="10" x2="20" y2="130" stroke="#444" strokeWidth="1" />
+                    <line x1="20" y1="130" x2="280" y2="130" stroke="#444" strokeWidth="1" />
+                    <line x1="20" y1="20" x2="280" y2="130" stroke="#555" strokeDasharray="3,3" strokeWidth="1.5" />
+                    <polyline
+                      fill="none"
+                      stroke="#FFE600"
+                      strokeWidth="2.5"
+                      points={`20,20 ${burndownPointsStr}`}
+                    />
+                    <text x="25" y="15" fill="#aaa" fontSize="8" fontFamily="monospace">Planned (Ideal)</text>
+                    <text x="180" y="55" fill="#FFE600" fontSize="8" fontFamily="monospace">Actual (W{selectedWeek})</text>
+                    <text x="140" y="145" fill="#666" fontSize="8" fontFamily="monospace">Weeks 1 - {project.weeklyLogs.length}</text>
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            {/* SVG Velocity Chart */}
+            <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
+              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Sprint Velocity Chart</h4>
+              <div className="w-full flex justify-center bg-black/40 p-3 rounded-xl min-h-[160px] items-center">
+                {!hasWeeklyData ? (
+                  <span className="text-slate-500 text-xs">No Velocity Data. Run AI Generator.</span>
+                ) : (
+                  <svg viewBox="0 0 300 150" className="w-full max-w-sm">
+                    <line x1="20" y1="10" x2="20" y2="130" stroke="#444" />
+                    <line x1="20" y1="130" x2="280" y2="130" stroke="#444" />
+                    {project.weeklyLogs.slice(0, selectedWeek).map((log, idx) => {
+                      const spacing = 45;
+                      const xStart = 30 + idx * spacing;
+                      const maxPts = Math.max(...project.weeklyLogs.map(l => Math.max(l.velocityTarget, l.velocityActual))) || 15;
+                      const targetHeight = (log.velocityTarget / maxPts) * 90;
+                      const actualHeight = (log.velocityActual / maxPts) * 90;
+                      return (
+                        <g key={log.week}>
+                          <rect
+                            x={xStart}
+                            y={130 - targetHeight}
+                            width={12}
+                            height={targetHeight}
+                            fill="#2E2E2E"
+                            rx={1}
+                          />
+                          <rect
+                            x={xStart + 14}
+                            y={130 - actualHeight}
+                            width={12}
+                            height={actualHeight}
+                            fill="#FFE600"
+                            rx={1}
+                          />
+                          <text x={xStart + 7} y="142" fill="#888" fontSize="8">W{log.week}</text>
+                        </g>
+                      );
+                    })}
+                    <text x="235" y="40" fill="#888" fontSize="7">■ Target</text>
+                    <text x="235" y="55" fill="#FFE600" fontSize="7">■ Actual</text>
+                  </svg>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Gantt Timeline Chart */}
+          <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
+            <h4 className="text-white text-xs font-bold uppercase tracking-widest">Gantt Timeline Projection</h4>
+            <div className="w-full flex justify-center bg-black/40 p-3 rounded-xl min-h-[160px] items-center overflow-x-auto">
+              {!hasWeeklyData ? (
+                <span className="text-slate-500 text-xs">No Gantt Timeline. Run AI Generator.</span>
+              ) : (
+                <svg viewBox="0 0 350 150" className="w-full min-w-[350px]">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <text key={i} x={80 + i * 60 + 30} y="15" fill="#888" fontSize="8" textAnchor="middle" fontWeight="bold">Week {i + 1}</text>
+                  ))}
+                  {projectEpics.map((ep, idx) => {
+                    const { start, end } = getEpicWeeks(ep.id);
+                    const x = 80 + (start - 1) * 60;
+                    const width = (end - start + 1) * 60;
+                    const y = 30 + idx * 28;
+                    const isActiveThisWeek = selectedWeek >= start && selectedWeek <= end;
+                    const delayAmount = (isActiveThisWeek && delayDays > 0) ? (delayDays / 7) * 60 : 0;
+                    return (
+                      <g key={ep.id}>
+                        <line x1="10" y1={y + 10} x2="320" y2={y + 10} stroke="#222" strokeWidth="0.5" />
+                        <text x="10" y={y + 12} fill="#aaa" fontSize="8" fontWeight="bold">{ep.name.substring(0, 12)}...</text>
+                        <rect x={x} y={y} width={width} height="12" fill="#2E2E2E" rx="3" />
+                        <rect x={x} y={y} width={width * (ep.progress / 100 || 0.1)} height="12" fill="#FFE600" rx="3" opacity="0.8" />
+                        {delayAmount > 0 && (
+                          <rect x={x + width} y={y + 3} width={delayAmount} height="6" fill="#ef4444" rx="1" />
+                        )}
+                      </g>
+                    );
+                  })}
+                  <line
+                    x1={80 + (selectedWeek - 1) * 60}
+                    y1="0"
+                    x2={80 + (selectedWeek - 1) * 60}
+                    y2="140"
+                    stroke="#fff"
+                    strokeWidth="1.5"
+                    strokeDasharray="2,2"
+                  />
+                  <text x={80 + (selectedWeek - 1) * 60 + 4} y="145" fill="#fff" fontSize="7" fontWeight="bold">Current (W{selectedWeek})</text>
+                </svg>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Risks heatmap & list */}
+      {subTab === "risks" && (
+        <div className="space-y-6">
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
+              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Risk Heatmap (5x5 Grid)</h4>
+              <p className="text-[10px] text-slate-500">Click a cell to filter risks.</p>
+              
+              <div className="w-full flex justify-center py-2">
+                {!hasWeeklyData && projectRisks.length === 0 ? (
+                  <div className="text-slate-500 text-xs text-center py-10">No risks identified. Run AI Generator.</div>
+                ) : (
+                  <svg viewBox="0 0 200 200" className="w-full max-w-[200px] mx-auto bg-black/60 p-2 rounded-xl border border-white/10">
+                    {heatmapData.map((row, yIdx) =>
+                      row.map((cell, xIdx) => {
+                        const cellWidth = 34;
+                        const gap = 4;
+                        const hasActive = cell.count > 0;
+                        let fillColor = "rgba(16, 185, 129, 0.15)";
+                        let strokeColor = "rgba(16, 185, 129, 0.3)";
+                        if (cell.y >= 4 && cell.x >= 4) {
+                          fillColor = "rgba(239, 68, 68, 0.4)";
+                          strokeColor = "rgba(239, 68, 68, 0.6)";
+                        } else if (cell.y >= 3 && cell.x >= 3) {
+                          fillColor = "rgba(245, 158, 11, 0.3)";
+                          strokeColor = "rgba(245, 158, 11, 0.5)";
+                        }
+
+                        const xPos = xIdx * (cellWidth + gap);
+                        const yPos = yIdx * (cellWidth + gap);
+
+                        return (
+                          <g key={`${cell.x}-${cell.y}`} className="cursor-pointer" onClick={() => {
+                            if (hasActive) setRiskFilter({ x: cell.x, y: cell.y });
+                            else setRiskFilter(null);
+                          }}>
+                            <rect
+                              x={xPos}
+                              y={yPos}
+                              width={cellWidth}
+                              height={cellWidth}
+                              fill={fillColor}
+                              stroke={hasActive ? "#FFE600" : strokeColor}
+                              strokeWidth={hasActive ? 2 : 1}
+                              rx={4}
+                            />
+                            <text
+                              x={xPos + cellWidth / 2}
+                              y={yPos + cellWidth / 2 + 3}
+                              fill={hasActive ? "#FFE600" : "#555"}
+                              fontSize="10"
+                              fontWeight="bold"
+                              textAnchor="middle"
+                            >
+                              {cell.count}
+                            </text>
+                          </g>
+                        );
+                      })
+                    )}
+                  </svg>
+                )}
+              </div>
+              
+              <div className="flex justify-between text-[9px] text-slate-500 px-2 font-mono">
+                <span>← Low Prob</span>
+                <span>High Prob →</span>
+              </div>
+            </div>
+
+            <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-4">
+              <div className="flex justify-between items-center">
+                <span className="text-white text-xs font-bold uppercase">Risk Register</span>
+                {riskFilter && (
+                  <button onClick={() => setRiskFilter(null)} className="text-[10px] text-amber-400">Clear Filter</button>
+                )}
+              </div>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs">
+                {activeRisks
+                  .filter(r => {
+                    if (!riskFilter) return true;
+                    const c = getRiskScore(r);
+                    return c.x === riskFilter.x && c.y === riskFilter.y;
+                  })
+                  .map(risk => (
+                    <div key={risk.id} className="bg-black/35 border border-white/5 p-3 rounded-xl space-y-2">
+                      <div className="flex justify-between">
+                        <strong>{risk.title}</strong>
+                        <RiskBadge severity={risk.severity} />
+                      </div>
+                      <p className="text-[11px] text-slate-400">Mitigation: {risk.mitigationPlan}</p>
+                      {risk.encounteredWeek && (
+                        <span className="text-[9px] font-mono text-[#FFE600]">Encountered in Week {risk.encounteredWeek}</span>
+                      )}
+                    </div>
+                  ))}
+                {activeRisks.length === 0 && (
+                  <div className="text-slate-500 text-center py-6">No active risks registered.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Setup and Generator tab */}
+      {subTab === "AI Setup" && (
+        <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-6 space-y-4">
+          <h4 className="text-white text-xs font-bold uppercase tracking-widest">AI Project Setup Generator</h4>
+          <p className="text-slate-400 text-xs">
+            Enter project documents, BRD texts, or user requirements raw text to dynamically generate Epics, Sprints, User Stories, Tasks, Risks, and week-by-week tracking log data.
+          </p>
+          <textarea
+            value={aiInput}
+            onChange={e => setAiInput(e.target.value)}
+            rows={5}
+            placeholder="Describe the goals, requirements, constraints, and features of the project in detail..."
+            className="w-full bg-black border border-white/20 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[#FFE600]"
+          />
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-400">Groq API Key:</span>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="Paste Groq API Key..."
+              className="bg-black border border-white/20 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
+            />
+          </div>
+          {apiLoading ? (
+            <Spinner />
+          ) : (
+            <button onClick={handleRunAIGenerator} className="px-4 py-2 bg-[#FFE600] text-black font-bold text-xs uppercase tracking-wider rounded-xl hover:bg-white transition-all">
+              ✦ Run AI Generator
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
