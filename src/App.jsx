@@ -272,6 +272,100 @@ const mergeTeamRoster = (storedTeam) => {
   return baseRoster.length > 0 ? baseRoster : INITIAL_TEAM_MEMBERS;
 };
 
+// ─── Login Page Component ────────────────────────────────────────────────────
+function LoginPage({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = () => {
+    setError("");
+    if (!username || !password) {
+      setError("Please enter both username and password.");
+      return;
+    }
+    setLoading(true);
+    setTimeout(() => {
+      if (username === "admin" && password === "admin") {
+        onLogin();
+      } else {
+        setError("Invalid credentials. Try admin / admin.");
+        setLoading(false);
+      }
+    }, 600);
+  };
+
+  return (
+    <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
+      {/* Background glow */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div style={{ position: "absolute", top: "-10%", left: "-10%", width: "50%", height: "50%", background: "radial-gradient(circle, rgba(255,230,0,0.08) 0%, transparent 70%)" }} />
+        <div style={{ position: "absolute", bottom: "-10%", right: "-10%", width: "40%", height: "40%", background: "radial-gradient(circle, rgba(255,230,0,0.05) 0%, transparent 70%)" }} />
+      </div>
+
+      <div className="relative z-10 w-full max-w-sm mx-auto px-6">
+        {/* Logo */}
+        <div className="text-center mb-10">
+          <div className="font-bold text-4xl text-[#FFE600] tracking-tight mb-1" style={{ fontFamily: "Syne, sans-serif" }}>
+            PRISM<span className="text-white font-medium">PM</span>
+          </div>
+          <div className="text-[10px] text-slate-500 tracking-widest uppercase">AI Project Intelligence Platform</div>
+        </div>
+
+        {/* Card */}
+        <div className="bg-[#111] border border-white/10 rounded-2xl p-8 space-y-5 shadow-2xl">
+          <h2 className="text-white font-bold text-sm uppercase tracking-widest">Sign In</h2>
+
+          <div className="space-y-1">
+            <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSubmit()}
+              placeholder="admin"
+              autoComplete="username"
+              className="w-full bg-black border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#FFE600]/60 transition-all"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSubmit()}
+              placeholder="••••••"
+              autoComplete="current-password"
+              className="w-full bg-black border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-[#FFE600]/60 transition-all"
+            />
+          </div>
+
+          {error && (
+            <div className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="w-full py-2.5 bg-[#FFE600] text-black font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? "Authenticating..." : "Sign In →"}
+          </button>
+        </div>
+
+        <div className="text-center mt-6 text-[10px] text-slate-600">
+          PRISM Intelligence · Secure Workspace
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App Component ──────────────────────────────────────────────────────
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
@@ -811,7 +905,15 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
             <h2 className="text-[#FFE600] font-bold text-xs uppercase tracking-widest">Enterprise Projects Portfolio</h2>
             <button
               onClick={() => {
-                localStorage.clear();
+                if (!window.confirm("Reset workspace? This will clear all projects, epics, sprints, stories, tasks, and risks, and restore the default seed data.")) return;
+                localStorage.removeItem("prismpm.projects");
+                localStorage.removeItem("prismpm.epics");
+                localStorage.removeItem("prismpm.stories");
+                localStorage.removeItem("prismpm.sprints");
+                localStorage.removeItem("prismpm.tasks");
+                localStorage.removeItem("prismpm.risks");
+                localStorage.removeItem(PM_STORAGE_KEY);
+                localStorage.removeItem("prismpm.notifications");
                 window.location.reload();
               }}
               className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all"
