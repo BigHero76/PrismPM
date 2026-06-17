@@ -9,7 +9,7 @@ const EY = {
 };
 
 // ─── Groq API Helper ────────────────────────────────────────────────────────
-const GROQ_MODELS = ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"];
+const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
 
 async function callGroq(prompt, systemPrompt = "", apiKey = "") {
   const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
