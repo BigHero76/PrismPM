@@ -2551,27 +2551,11 @@ Return ONLY this JSON (no markdown, no extra text):
   "risks": [{ "title": "string", "severity": "High", "impact": "string", "probability": 70, "category": "Technical", "mitigationPlan": "string", "encounteredWeek": 2 }]
 }`;
 
-      // ── Call 2: Weekly Logs ──
-      const weeklyPrompt = `${projectContext}
-
-Generate a 4-week sprint execution log for this project.
-
-Return ONLY this JSON (no markdown, no extra text):
-{
-  "weeklyLogs": [
-    { "week": 1, "label": "Week 1", "donePoints": 8, "remainingPoints": 22, "delayDays": 1, "risks": ["string"], "burndownPoints": [30,28,26,24,22,21,20], "velocityTarget": 10, "velocityActual": 8 },
-    { "week": 2, "label": "Week 2", "donePoints": 15, "remainingPoints": 15, "delayDays": 2, "risks": ["string"], "burndownPoints": [20,18,16,15,14,13,12], "velocityTarget": 10, "velocityActual": 7 },
-    { "week": 3, "label": "Week 3", "donePoints": 25, "remainingPoints": 5, "delayDays": 1, "risks": [], "burndownPoints": [12,10,8,6,5,4,3], "velocityTarget": 10, "velocityActual": 10 },
-    { "week": 4, "label": "Week 4", "donePoints": 30, "remainingPoints": 0, "delayDays": 0, "risks": [], "burndownPoints": [3,2,1,0,0,0,0], "velocityTarget": 10, "velocityActual": 9 }
-  ]
-}`;
-
-      const [result, weeklyResult] = await Promise.all([
+      const [result] = await Promise.all([
         callGroq(structurePrompt, "You are an expert project manager AI. Always respond with valid JSON only.", key),
-        callGroq(weeklyPrompt, "You are an expert project manager AI. Always respond with valid JSON only.", key),
       ]);
 
-      const mergedResult = { ...result, weeklyLogs: weeklyResult?.weeklyLogs || [] };
+      const mergedResult = { ...result, weeklyLogs: [] };
       if (mergedResult) {
         const epicMap = {};
         const sprintMap = {};
@@ -2671,7 +2655,7 @@ Return ONLY this JSON (no markdown, no extra text):
           return p;
         }));
 
-        addNotification(`AI successfully generated full project setup and 4 weekly logs.`, "system");
+        addNotification(`AI successfully generated full project setup for ${project.name}.`, "system");
         setSelectedWeek(1);
         alert("Project setup successfully generated!");
       }
@@ -2679,6 +2663,107 @@ Return ONLY this JSON (no markdown, no extra text):
       alert("AI generation failed: " + e.message);
     } finally {
       setApiLoading(false);
+    }
+  };
+
+  const [simulateLoading, setSimulateLoading] = useState(false);
+
+  const handleSimulateWeek = async () => {
+    const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
+    if (!key) { alert("Please provide a Groq API key in the AI Setup tab."); return; }
+
+    const existingLogs = project.weeklyLogs || [];
+    const nextWeek = existingLogs.length + 1;
+    const projectStoryList = stories.filter(s => s.projectId === project.id);
+    const totalPts = projectStoryList.reduce((sum, s) => sum + (s.points || 0), 0);
+    const prevLog = existingLogs[existingLogs.length - 1] || null;
+    const prevDone = prevLog ? prevLog.donePoints : 0;
+    const prevRemaining = prevLog ? prevLog.remainingPoints : totalPts;
+
+    if (prevRemaining <= 0 && existingLogs.length > 0) {
+      alert("Project is already 100% complete — no more weeks to simulate."); return;
+    }
+
+    setSimulateLoading(true);
+    try {
+      const sprintList = sprints.filter(s => s.projectId === project.id);
+      const epicList = epics.filter(e => e.projectId === project.id);
+      const riskList = risks.filter(r => r.projectId === project.id);
+
+      const context = `Project: ${project.name}
+Description: ${project.description}
+Total Story Points: ${totalPts}
+Sprints: ${sprintList.map(s => s.name).join(", ")}
+Epics: ${epicList.map(e => e.name).join(", ")}
+Known Risks: ${riskList.map(r => r.title).join(", ")}
+Previous weeks simulated: ${existingLogs.length}
+Points done so far: ${prevDone}
+Points remaining: ${prevRemaining}
+Stories: ${projectStoryList.map(s => `${s.title} (${s.points}pts, ${s.status})`).join("; ")}`;
+
+      const prompt = `${context}
+
+You are simulating Week ${nextWeek} of execution for this project.
+Based on the backlog and remaining story points (${prevRemaining} pts left), decide:
+- How many points get completed this week (realistic, accounting for team velocity and possible blockers)
+- Which stories move to "In Progress" or "Done" this week
+- Whether any delays or new risks occur
+- Burndown for each of the 7 days this week (array of 7 numbers, decreasing)
+- Velocity target vs actual
+
+Return ONLY this JSON:
+{
+  "week": ${nextWeek},
+  "label": "Week ${nextWeek}",
+  "donePoints": <cumulative points done including this week>,
+  "remainingPoints": <points still left after this week>,
+  "delayDays": <0 if on track, positive number if behind>,
+  "velocityTarget": <expected points this week>,
+  "velocityActual": <actual points completed this week>,
+  "burndownPoints": [<7 daily values, starting from remaining at week start, ending at remaining after week>],
+  "risks": [<array of risk strings that surfaced this week, can be empty>],
+  "storyUpdates": [{ "title": "<story title>", "status": "In Progress" | "Done" }],
+  "weekSummary": "<2-3 sentence natural language summary of what happened this week>"
+}`;
+
+      const result = await callGroq(prompt, "You are an expert agile project manager AI. Always respond with valid JSON only.", key);
+
+      if (result && result.week) {
+        // Apply story status updates
+        if (result.storyUpdates && result.storyUpdates.length > 0) {
+          setStories(prev => prev.map(s => {
+            const update = result.storyUpdates.find(u => u.title === s.title);
+            return update ? { ...s, status: update.status } : s;
+          }));
+        }
+
+        // Append the new weekly log
+        setProjects(prev => prev.map(p => {
+          if (p.id !== project.id) return p;
+          const newLog = {
+            week: result.week,
+            label: result.label || `Week ${nextWeek}`,
+            donePoints: result.donePoints || prevDone,
+            remainingPoints: result.remainingPoints ?? prevRemaining,
+            delayDays: result.delayDays || 0,
+            velocityTarget: result.velocityTarget || 10,
+            velocityActual: result.velocityActual || 0,
+            burndownPoints: result.burndownPoints || [],
+            risks: result.risks || [],
+            weekSummary: result.weekSummary || ""
+          };
+          return { ...p, weeklyLogs: [...(p.weeklyLogs || []), newLog] };
+        }));
+
+        setSelectedWeek(nextWeek);
+        addNotification(`Week ${nextWeek} simulated: ${result.velocityActual} pts completed. ${result.delayDays > 0 ? `⚠️ ${result.delayDays} day delay.` : "✅ On track."}`, "system");
+      } else {
+        alert("AI returned an unexpected response. Please try again.");
+      }
+    } catch (e) {
+      alert("Simulation failed: " + e.message);
+    } finally {
+      setSimulateLoading(false);
     }
   };
 
@@ -2799,9 +2884,9 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
         <div className="bg-[#2E2E2E]/30 border border-white/10 rounded-2xl p-5 space-y-4">
           <div className="flex justify-between items-center flex-wrap gap-2">
             <span className="text-white text-xs font-bold uppercase tracking-widest">
-              Selected Execution Week: <strong className="text-[#FFE600] font-mono">Week {selectedWeek}</strong>
+              Execution Timeline — <strong className="text-[#FFE600] font-mono">Week {selectedWeek}</strong> of {project.weeklyLogs.length}
             </span>
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
               {project.weeklyLogs.map(log => (
                 <button
                   key={log.week}
@@ -2813,6 +2898,19 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
                   W{log.week}
                 </button>
               ))}
+              {simulateLoading ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-black/40 rounded-lg">
+                  <div className="w-3 h-3 border-2 border-[#FFE600] border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[10px] text-[#FFE600] font-bold">Simulating...</span>
+                </div>
+              ) : (
+                <button
+                  onClick={handleSimulateWeek}
+                  className="px-3 py-1.5 bg-[#FFE600] text-black text-xs font-extrabold uppercase tracking-wider rounded-lg hover:bg-white transition-all"
+                >
+                  ▶ Simulate Week {project.weeklyLogs.length + 1}
+                </button>
+              )}
             </div>
           </div>
           <input
@@ -2823,10 +2921,30 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
             onChange={e => setSelectedWeek(Number(e.target.value))}
             className="w-full accent-[#FFE600] cursor-pointer"
           />
+          {currentWeekLog?.weekSummary && (
+            <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-xs text-slate-300 italic leading-relaxed">
+              <span className="text-[#FFE600] font-bold not-italic">Week {selectedWeek} Summary: </span>
+              {currentWeekLog.weekSummary}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="bg-amber-950/20 border border-amber-800/30 rounded-2xl p-4 text-xs text-amber-300 flex justify-between items-center">
-          <span>⚠️ This project is a clean/blank slate. Please run the AI Generator to populate the weekly data.</span>
+        <div className="bg-amber-950/20 border border-amber-800/30 rounded-2xl p-4 text-xs text-amber-300 flex justify-between items-center gap-4 flex-wrap">
+          <span>⚠️ No weeks simulated yet. Run the AI Generator first to set up the project, then use <strong>Simulate Week</strong> to step through execution.</span>
+          {simulateLoading ? (
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 border-2 border-[#FFE600] border-t-transparent rounded-full animate-spin" />
+              <span className="text-[10px] text-[#FFE600] font-bold">Simulating...</span>
+            </div>
+          ) : (
+            <button
+              onClick={handleSimulateWeek}
+              disabled={stories.filter(s => s.projectId === project.id).length === 0}
+              className="px-4 py-2 bg-[#FFE600] text-black text-xs font-extrabold uppercase tracking-wider rounded-xl hover:bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              ▶ Simulate Week 1
+            </button>
+          )}
         </div>
       )}
 
