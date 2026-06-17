@@ -36,7 +36,7 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "") {
               { role: "user", content: prompt },
             ],
             temperature: 0.2,
-            max_tokens: 1200,
+            max_tokens: 4000,
             response_format: {
               type: "json_object",
             },
@@ -2532,97 +2532,52 @@ function ProjectDetail({
     }
     setApiLoading(true);
     try {
-      const prompt = `Based on the following project information:
-Name: ${project.name}
+      const projectContext = `Project Name: ${project.name}
 Description: ${project.description}
-Raw documents/Requirements: ${aiInput}
+Requirements: ${aiInput}`;
 
-Generate a complete project setup with 3-4 epics, 6-8 user stories, 3 sprints, 2-3 tasks nested under each user story, 3-4 risks, and a week-by-week tracking log for 4 weeks.
-For Sprints, specify start and end dates grouped by week (e.g. Week 1, Week 2).
-For Risks, specify which week they were encountered (from 1 to 4).
-For the week-by-week tracking log (4 weeks), specify:
-- week: number (1 to 4)
-- label: string (e.g. "Week 1")
-- donePoints: number of story points completed in that week
-- remainingPoints: number of story points remaining at that week
-- delayDays: calculated lag/delay in days for that week (e.g. 0, 2, 4)
-- risks: array of strings of risks encountered in that week
-- burndownPoints: array of numbers representing daily burndown points for that week (7 values per week)
-- velocityTarget: target velocity for that week (number)
-- velocityActual: actual velocity achieved in that week (number)
+      // ── Call 1: Epics, Stories, Sprints, Tasks, Risks ──
+      const structurePrompt = `${projectContext}
 
-Return a single JSON object with EXACTLY this structure:
+Generate a project structure with 3-4 epics, 6-8 user stories, 3 sprints, 2-3 tasks per story, and 3-4 risks.
+For Risks, assign encounteredWeek from 1 to 4.
+
+Return ONLY this JSON (no markdown, no extra text):
 {
-  "epics": [
-    { "name": "Epic Name", "description": "Epic description" }
-  ],
-  "stories": [
-    { "title": "Story Title", "description": "As a... I want to... So that...", "points": 5, "priority": "High", "moscow": "Must Have", "epicName": "Epic Name", "sprintName": "Sprint 1", "status": "Done" }
-  ],
-  "sprints": [
-    { "name": "Sprint 1", "goal": "Sprint goal", "startDate": "2026-06-01", "endDate": "2026-06-14", "status": "Closed" }
-  ],
-  "tasks": [
-    { "storyTitle": "Story Title", "name": "Task Name", "status": "Done", "priority": "High", "due": "2026-06-05", "description": "Task description" }
-  ],
-  "risks": [
-    { "title": "Risk Title", "severity": "High", "impact": "Impact description", "probability": 70, "category": "Technical", "mitigationPlan": "Mitigation details", "encounteredWeek": 2 }
-  ],
+  "epics": [{ "name": "string", "description": "string" }],
+  "stories": [{ "title": "string", "description": "As a... I want to... So that...", "points": 5, "priority": "High", "moscow": "Must Have", "epicName": "string", "sprintName": "Sprint 1", "status": "Done" }],
+  "sprints": [{ "name": "Sprint 1", "goal": "string", "startDate": "2026-06-01", "endDate": "2026-06-14", "status": "Closed" }],
+  "tasks": [{ "storyTitle": "string", "name": "string", "status": "Done", "priority": "High", "due": "2026-06-05", "description": "string" }],
+  "risks": [{ "title": "string", "severity": "High", "impact": "string", "probability": 70, "category": "Technical", "mitigationPlan": "string", "encounteredWeek": 2 }]
+}`;
+
+      // ── Call 2: Weekly Logs ──
+      const weeklyPrompt = `${projectContext}
+
+Generate a 4-week sprint execution log for this project.
+
+Return ONLY this JSON (no markdown, no extra text):
+{
   "weeklyLogs": [
-    {
-      "week": 1,
-      "label": "Week 1",
-      "donePoints": 8,
-      "remainingPoints": 22,
-      "delayDays": 1,
-      "risks": ["Risk details"],
-      "burndownPoints": [30, 28, 28, 25, 25, 22, 22],
-      "velocityTarget": 10,
-      "velocityActual": 8
-    },
-    {
-      "week": 2,
-      "label": "Week 2",
-      "donePoints": 15,
-      "remainingPoints": 15,
-      "delayDays": 2,
-      "risks": ["Resource bottleneck"],
-      "burndownPoints": [22, 20, 18, 18, 15, 15, 15],
-      "velocityTarget": 10,
-      "velocityActual": 7
-    },
-    {
-      "week": 3,
-      "label": "Week 3",
-      "donePoints": 25,
-      "remainingPoints": 5,
-      "delayDays": 1,
-      "risks": [],
-      "burndownPoints": [15, 12, 10, 8, 8, 5, 5],
-      "velocityTarget": 10,
-      "velocityActual": 10
-    },
-    {
-      "week": 4,
-      "label": "Week 4",
-      "donePoints": 30,
-      "remainingPoints": 0,
-      "delayDays": 0,
-      "risks": [],
-      "burndownPoints": [5, 3, 2, 0, 0, 0, 0],
-      "velocityTarget": 10,
-      "velocityActual": 5
-    }
+    { "week": 1, "label": "Week 1", "donePoints": 8, "remainingPoints": 22, "delayDays": 1, "risks": ["string"], "burndownPoints": [30,28,26,24,22,21,20], "velocityTarget": 10, "velocityActual": 8 },
+    { "week": 2, "label": "Week 2", "donePoints": 15, "remainingPoints": 15, "delayDays": 2, "risks": ["string"], "burndownPoints": [20,18,16,15,14,13,12], "velocityTarget": 10, "velocityActual": 7 },
+    { "week": 3, "label": "Week 3", "donePoints": 25, "remainingPoints": 5, "delayDays": 1, "risks": [], "burndownPoints": [12,10,8,6,5,4,3], "velocityTarget": 10, "velocityActual": 10 },
+    { "week": 4, "label": "Week 4", "donePoints": 30, "remainingPoints": 0, "delayDays": 0, "risks": [], "burndownPoints": [3,2,1,0,0,0,0], "velocityTarget": 10, "velocityActual": 9 }
   ]
 }`;
 
-      const result = await callGroq(prompt, "You are an expert project manager AI. Always respond with valid JSON only.", key);
-      if (result) {
+      const [result, weeklyResult] = await Promise.all([
+        callGroq(structurePrompt, "You are an expert project manager AI. Always respond with valid JSON only.", key),
+        callGroq(weeklyPrompt, "You are an expert project manager AI. Always respond with valid JSON only.", key),
+      ]);
+
+      const mergedResult = { ...result, weeklyLogs: weeklyResult?.weeklyLogs || [] };
+      if (mergedResult) {
         const epicMap = {};
         const sprintMap = {};
         const storyMap = {};
 
-        const generatedEpics = (result.epics || []).map(ep => {
+        const generatedEpics = (mergedResult.epics || []).map(ep => {
           const id = Date.now() + Math.random();
           epicMap[ep.name] = id;
           return {
@@ -2635,7 +2590,7 @@ Return a single JSON object with EXACTLY this structure:
           };
         });
 
-        const generatedSprints = (result.sprints || []).map(sp => {
+        const generatedSprints = (mergedResult.sprints || []).map(sp => {
           const id = Date.now() + Math.random();
           sprintMap[sp.name] = id;
           return {
@@ -2649,7 +2604,7 @@ Return a single JSON object with EXACTLY this structure:
           };
         });
 
-        const generatedStories = (result.stories || []).map(st => {
+        const generatedStories = (mergedResult.stories || []).map(st => {
           const id = Date.now() + Math.random();
           storyMap[st.title] = id;
           return {
@@ -2667,7 +2622,7 @@ Return a single JSON object with EXACTLY this structure:
           };
         });
 
-        const generatedTasks = (result.tasks || []).map(tk => {
+        const generatedTasks = (mergedResult.tasks || []).map(tk => {
           return {
             id: Date.now() + Math.random(),
             storyId: storyMap[tk.storyTitle] || null,
@@ -2682,7 +2637,7 @@ Return a single JSON object with EXACTLY this structure:
           };
         });
 
-        const generatedRisks = (result.risks || []).map(rk => {
+        const generatedRisks = (mergedResult.risks || []).map(rk => {
           return {
             id: Date.now() + Math.random(),
             projectId: project.id,
@@ -2710,7 +2665,7 @@ Return a single JSON object with EXACTLY this structure:
           if (p.id === project.id) {
             return {
               ...p,
-              weeklyLogs: result.weeklyLogs || []
+              weeklyLogs: mergedResult.weeklyLogs || []
             };
           }
           return p;
