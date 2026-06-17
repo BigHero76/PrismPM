@@ -780,7 +780,7 @@ export default function App() {
               )}
               {tab === "project" && selectedProject && (
                 <ProjectDetail
-                  project={selectedProject}
+                  project={projects.find(p => p.id === selectedProject.id) || selectedProject}
                   projects={projects}
                   setProjects={setProjects}
                   epics={epics}
@@ -2461,7 +2461,7 @@ function ProjectDetail({
     ? Math.round((currentWeekLog.donePoints / (currentWeekLog.donePoints + currentWeekLog.remainingPoints)) * 100) || 0
     : (totalPoints > 0 ? Math.round((completedStoriesCount / totalPoints) * 100) : 0);
 
-  const elapsed = hasWeeklyData ? selectedWeek * 7 : 0;
+  const elapsed = project.elapsed || (hasWeeklyData ? project.weeklyLogs.length * 7 : 0);
   const spent = hasWeeklyData && currentWeekLog
     ? Math.round(project.budget * (currentWeekLog.donePoints / (currentWeekLog.donePoints + currentWeekLog.remainingPoints)) * 0.9) || 0
     : 0;
@@ -2728,6 +2728,12 @@ Return ONLY this JSON:
 
       const result = await callGroq(prompt, "You are an expert agile project manager AI. Always respond with valid JSON only.", key);
 
+      // If callGroq fell back to {raw: text}, JSON.parse failed — surface the error
+      if (result && result.raw) {
+        alert("AI returned malformed JSON. Try again — the model occasionally truncates responses.");
+        return;
+      }
+
       if (result && result.week) {
         // Apply story status updates
         if (result.storyUpdates && result.storyUpdates.length > 0) {
@@ -2737,7 +2743,7 @@ Return ONLY this JSON:
           }));
         }
 
-        // Append the new weekly log
+        // Append the new weekly log and update elapsed days
         setProjects(prev => prev.map(p => {
           if (p.id !== project.id) return p;
           const newLog = {
@@ -2752,7 +2758,12 @@ Return ONLY this JSON:
             risks: result.risks || [],
             weekSummary: result.weekSummary || ""
           };
-          return { ...p, weeklyLogs: [...(p.weeklyLogs || []), newLog] };
+          const updatedLogs = [...(p.weeklyLogs || []), newLog];
+          return {
+            ...p,
+            weeklyLogs: updatedLogs,
+            elapsed: updatedLogs.length * 7,
+          };
         }));
 
         setSelectedWeek(nextWeek);
