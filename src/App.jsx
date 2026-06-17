@@ -2431,6 +2431,10 @@ function ProjectDetail({
   const [riskFilter, setRiskFilter] = useState(null);
   const [aiInput, setAiInput] = useState("");
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("prismpm.groqApiKey") || "");
+  const [docParsing, setDocParsing] = useState(false);
+  const [docFileName, setDocFileName] = useState("");
+  const [docError, setDocError] = useState("");
+  const docFileInputRef = useRef(null);
 
   const projectStories = stories.filter(s => s.projectId === project.id);
   const projectRisks = risks.filter(r => r.projectId === project.id);
@@ -2468,6 +2472,53 @@ function ProjectDetail({
   const activeRisks = hasWeeklyData
     ? projectRisks.filter(r => r.encounteredWeek <= selectedWeek)
     : projectRisks;
+
+  const handleDocumentUpload = async (file) => {
+    if (!file) return;
+    setDocError("");
+    setDocParsing(true);
+    setDocFileName(file.name);
+    const ext = file.name.split(".").pop().toLowerCase();
+
+    try {
+      if (ext === "pdf") {
+        // Load pdf.js from CDN
+        const pdfjsLib = await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = "";
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          fullText += content.items.map(item => item.str).join(" ") + "\n";
+        }
+        setAiInput(prev => prev ? prev + "\n\n--- Extracted from " + file.name + " ---\n" + fullText.trim() : fullText.trim());
+      } else if (ext === "docx") {
+        // Load mammoth via script tag since its CDN build doesn't work as ES module
+        await new Promise((resolve, reject) => {
+          if (window.mammoth) return resolve();
+          const script = document.createElement("script");
+          script.src = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js";
+          script.onload = resolve;
+          script.onerror = () => reject(new Error("Failed to load mammoth.js"));
+          document.head.appendChild(script);
+        });
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.mammoth.extractRawText({ arrayBuffer });
+        const text = result.value.trim();
+        setAiInput(prev => prev ? prev + "\n\n--- Extracted from " + file.name + " ---\n" + text : text);
+      } else {
+        setDocError("Only PDF and DOCX files are supported.");
+        setDocFileName("");
+      }
+    } catch (err) {
+      setDocError("Failed to parse document: " + err.message);
+      setDocFileName("");
+    } finally {
+      setDocParsing(false);
+    }
+  };
 
   const handleRunAIGenerator = async () => {
     if (!aiInput.trim()) {
@@ -3110,15 +3161,76 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
         <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-6 space-y-4">
           <h4 className="text-white text-xs font-bold uppercase tracking-widest">AI Project Setup Generator</h4>
           <p className="text-slate-400 text-xs">
-            Enter project documents, BRD texts, or user requirements raw text to dynamically generate Epics, Sprints, User Stories, Tasks, Risks, and week-by-week tracking log data.
+            Upload a PDF or Word document, or paste raw requirements text below. The AI will generate Epics, Sprints, User Stories, Tasks, Risks, and weekly tracking logs.
           </p>
-          <textarea
-            value={aiInput}
-            onChange={e => setAiInput(e.target.value)}
-            rows={5}
-            placeholder="Describe the goals, requirements, constraints, and features of the project in detail..."
-            className="w-full bg-black border border-white/20 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[#FFE600]"
-          />
+
+          {/* Document Upload Zone */}
+          <div
+            className="border-2 border-dashed border-white/20 rounded-xl p-5 text-center cursor-pointer hover:border-[#FFE600]/60 transition-all relative"
+            onClick={() => docFileInputRef.current?.click()}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => {
+              e.preventDefault();
+              const file = e.dataTransfer.files[0];
+              if (file) handleDocumentUpload(file);
+            }}
+          >
+            <input
+              ref={docFileInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files[0];
+                if (file) handleDocumentUpload(file);
+                e.target.value = "";
+              }}
+            />
+            {docParsing ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-5 h-5 border-2 border-[#FFE600] border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-slate-400">Reading document...</span>
+              </div>
+            ) : docFileName ? (
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-lg">✅</span>
+                <span className="text-xs text-[#FFE600] font-semibold">{docFileName}</span>
+                <span className="text-[10px] text-slate-500">Text extracted and added below. Click to upload another.</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-2xl">📄</span>
+                <span className="text-xs text-white font-semibold">Drop a PDF or Word file here</span>
+                <span className="text-[10px] text-slate-500">or click to browse &nbsp;·&nbsp; .pdf and .docx supported</span>
+              </div>
+            )}
+          </div>
+
+          {docError && (
+            <div className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
+              {docError}
+            </div>
+          )}
+
+          <div className="relative">
+            <textarea
+              value={aiInput}
+              onChange={e => setAiInput(e.target.value)}
+              rows={6}
+              placeholder="Extracted document text will appear here, or type/paste requirements manually..."
+              className="w-full bg-black border border-white/20 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[#FFE600]"
+            />
+            {aiInput && (
+              <button
+                onClick={() => { setAiInput(""); setDocFileName(""); setDocError(""); }}
+                className="absolute top-2 right-2 text-[10px] text-slate-500 hover:text-red-400 transition-all"
+                title="Clear text"
+              >
+                ✕ Clear
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-400">Groq API Key:</span>
             <input
