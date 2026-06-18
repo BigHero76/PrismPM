@@ -3100,45 +3100,136 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
           {/* Gantt Timeline Chart */}
           <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
             <h4 className="text-white text-xs font-bold uppercase tracking-widest">Gantt Timeline Projection</h4>
-            <div className="w-full flex justify-center bg-black/40 p-3 rounded-xl min-h-[160px] items-center overflow-x-auto">
+            <div className="w-full bg-black/40 p-3 rounded-xl min-h-[160px] flex items-center overflow-x-auto">
               {!hasWeeklyData ? (
-                <span className="text-slate-500 text-xs">No Gantt Timeline. Run AI Generator.</span>
-              ) : (
-                <svg viewBox="0 0 350 150" className="w-full min-w-[350px]">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <text key={i} x={80 + i * 60 + 30} y="15" fill="#888" fontSize="8" textAnchor="middle" fontWeight="bold">Week {i + 1}</text>
-                  ))}
-                  {projectEpics.map((ep, idx) => {
-                    const { start, end } = getEpicWeeks(ep.id);
-                    const x = 80 + (start - 1) * 60;
-                    const width = (end - start + 1) * 60;
-                    const y = 30 + idx * 28;
-                    const isActiveThisWeek = selectedWeek >= start && selectedWeek <= end;
-                    const delayAmount = (isActiveThisWeek && delayDays > 0) ? (delayDays / 7) * 60 : 0;
-                    return (
-                      <g key={ep.id}>
-                        <line x1="10" y1={y + 10} x2="320" y2={y + 10} stroke="#222" strokeWidth="0.5" />
-                        <text x="10" y={y + 12} fill="#aaa" fontSize="8" fontWeight="bold">{ep.name.substring(0, 12)}...</text>
-                        <rect x={x} y={y} width={width} height="12" fill="#2E2E2E" rx="3" />
-                        <rect x={x} y={y} width={width * (ep.progress / 100 || 0.1)} height="12" fill="#FFE600" rx="3" opacity="0.8" />
-                        {delayAmount > 0 && (
-                          <rect x={x + width} y={y + 3} width={delayAmount} height="6" fill="#ef4444" rx="1" />
-                        )}
-                      </g>
-                    );
-                  })}
-                  <line
-                    x1={80 + (selectedWeek - 1) * 60}
-                    y1="0"
-                    x2={80 + (selectedWeek - 1) * 60}
-                    y2="140"
-                    stroke="#fff"
-                    strokeWidth="1.5"
-                    strokeDasharray="2,2"
-                  />
-                  <text x={80 + (selectedWeek - 1) * 60 + 4} y="145" fill="#fff" fontSize="7" fontWeight="bold">Current (W{selectedWeek})</text>
-                </svg>
-              )}
+                <span className="text-slate-500 text-xs mx-auto">No Gantt Timeline. Simulate at least one week to begin.</span>
+              ) : (() => {
+                const totalWeeks = project.weeklyLogs.length;
+                const COL_W = 80;          // pixels per week column
+                const ROW_H = 36;          // height per epic row
+                const LABEL_W = 140;       // left label area
+                const HEADER_H = 24;       // top header height
+                const PAD = 16;            // bottom padding
+                const svgW = LABEL_W + totalWeeks * COL_W;
+                const svgH = HEADER_H + projectEpics.length * ROW_H + PAD;
+
+                // Compute epic week span from sprint index (no cap)
+                const getEpicSpan = (epicId) => {
+                  const epicStories = projectStories.filter(s => s.epicId === epicId);
+                  if (epicStories.length === 0) return { start: 1, end: 1 };
+                  const projectSprintList = sprints.filter(sp => sp.projectId === project.id);
+                  let start = Infinity, end = 0;
+                  epicStories.forEach(s => {
+                    const spIdx = projectSprintList.findIndex(sp => sp.id === s.sprintId);
+                    if (spIdx >= 0) {
+                      const sw = spIdx * 2 + 1;
+                      const ew = sw + 1;
+                      if (sw < start) start = sw;
+                      if (ew > end) end = ew;
+                    }
+                  });
+                  if (!isFinite(start)) return { start: 1, end: totalWeeks };
+                  return { start: Math.max(1, start), end: Math.min(totalWeeks, end) };
+                };
+
+                // Compute epic progress from Done stories vs total
+                const getEpicProgress = (epicId) => {
+                  const epicStories = projectStories.filter(s => s.epicId === epicId);
+                  if (epicStories.length === 0) return 0;
+                  const done = epicStories.filter(s => s.status === "Done").length;
+                  return done / epicStories.length;
+                };
+
+                return (
+                  <svg
+                    viewBox={`0 0 ${svgW} ${svgH}`}
+                    className="w-full"
+                    style={{ minWidth: svgW }}
+                  >
+                    {/* Week column headers */}
+                    {Array.from({ length: totalWeeks }).map((_, i) => {
+                      const cx = LABEL_W + i * COL_W + COL_W / 2;
+                      return (
+                        <g key={i}>
+                          <line x1={LABEL_W + i * COL_W} y1={0} x2={LABEL_W + i * COL_W} y2={svgH - PAD} stroke="#1a1a1a" strokeWidth="1" />
+                          <text x={cx} y={14} fill={i + 1 === selectedWeek ? "#FFE600" : "#666"} fontSize="9" textAnchor="middle" fontWeight="bold">
+                            W{i + 1}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Epic rows */}
+                    {projectEpics.map((ep, idx) => {
+                      const { start, end } = getEpicSpan(ep.id);
+                      const progress = getEpicProgress(ep.id);
+                      const barX = LABEL_W + (start - 1) * COL_W + 4;
+                      const barW = (end - start + 1) * COL_W - 8;
+                      const barY = HEADER_H + idx * ROW_H + 6;
+                      const barH = 16;
+                      const isCompleted = progress >= 1;
+
+                      // Delay extension bar
+                      const epicLogs = project.weeklyLogs.filter(l => l.week >= start && l.week <= end);
+                      const totalDelay = epicLogs.reduce((sum, l) => sum + (l.delayDays || 0), 0);
+                      const delayW = totalDelay > 0 ? Math.round((totalDelay / 7) * COL_W) : 0;
+
+                      return (
+                        <g key={ep.id}>
+                          {/* Row separator */}
+                          <line x1={0} y1={HEADER_H + idx * ROW_H} x2={svgW} y2={HEADER_H + idx * ROW_H} stroke="#111" strokeWidth="0.5" />
+
+                          {/* Epic label */}
+                          <text x={8} y={barY + barH / 2 + 4} fill={isCompleted ? "#FFE600" : "#aaa"} fontSize="9" fontWeight="bold">
+                            {ep.name.length > 16 ? ep.name.substring(0, 16) + "…" : ep.name}
+                            {isCompleted ? " ✓" : ""}
+                          </text>
+
+                          {/* Track background */}
+                          <rect x={barX} y={barY} width={barW} height={barH} fill="#1a1a1a" rx="4" />
+
+                          {/* Progress fill */}
+                          <rect x={barX} y={barY} width={Math.max(4, barW * progress)} height={barH}
+                            fill={isCompleted ? "#22c55e" : "#FFE600"} rx="4" opacity="0.9" />
+
+                          {/* Delay overrun bar */}
+                          {delayW > 0 && (
+                            <rect x={barX + barW} y={barY + 4} width={Math.min(delayW, COL_W - 4)} height={barH - 8}
+                              fill="#ef4444" rx="2" opacity="0.8" />
+                          )}
+
+                          {/* Progress % label inside bar */}
+                          {barW > 30 && (
+                            <text x={barX + 6} y={barY + barH / 2 + 3.5} fill={isCompleted ? "#fff" : "#000"} fontSize="7.5" fontWeight="bold">
+                              {Math.round(progress * 100)}%
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+
+                    {/* Current week indicator line */}
+                    <line
+                      x1={LABEL_W + (selectedWeek - 1) * COL_W}
+                      y1={0}
+                      x2={LABEL_W + (selectedWeek - 1) * COL_W}
+                      y2={svgH - PAD}
+                      stroke="#ffffff"
+                      strokeWidth="1.5"
+                      strokeDasharray="3,3"
+                      opacity="0.6"
+                    />
+
+                    {/* Legend */}
+                    <rect x={LABEL_W} y={svgH - PAD + 2} width={10} height={6} fill="#FFE600" rx="1" />
+                    <text x={LABEL_W + 13} y={svgH - PAD + 9} fill="#666" fontSize="7">In Progress</text>
+                    <rect x={LABEL_W + 75} y={svgH - PAD + 2} width={10} height={6} fill="#22c55e" rx="1" />
+                    <text x={LABEL_W + 88} y={svgH - PAD + 9} fill="#666" fontSize="7">Complete</text>
+                    <rect x={LABEL_W + 150} y={svgH - PAD + 2} width={10} height={6} fill="#ef4444" rx="1" />
+                    <text x={LABEL_W + 163} y={svgH - PAD + 9} fill="#666" fontSize="7">Delay</text>
+                  </svg>
+                );
+              })()}
             </div>
           </div>
         </div>
