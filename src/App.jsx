@@ -2468,10 +2468,10 @@ function ProjectDetail({
 
   const delayDays = hasWeeklyData && currentWeekLog ? currentWeekLog.delayDays : 0;
   
-  // Filter risks active up to the selected week
+  // Only show risks whose encounteredWeek has been simulated
   const activeRisks = hasWeeklyData
-    ? projectRisks.filter(r => r.encounteredWeek <= selectedWeek)
-    : projectRisks;
+    ? projectRisks.filter(r => !r.encounteredWeek || r.encounteredWeek <= selectedWeek)
+    : [];
 
   const handleDocumentUpload = async (file) => {
     if (!file) return;
@@ -3144,8 +3144,10 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
               <p className="text-[10px] text-slate-500">Click a cell to filter risks.</p>
               
               <div className="w-full flex justify-center py-2">
-                {!hasWeeklyData && projectRisks.length === 0 ? (
-                  <div className="text-slate-500 text-xs text-center py-10">No risks identified. Run AI Generator.</div>
+                {!hasWeeklyData ? (
+                  <div className="text-slate-500 text-xs text-center py-10">No risks revealed yet. Simulate weeks to uncover risks progressively.</div>
+                ) : activeRisks.length === 0 ? (
+                  <div className="text-slate-500 text-xs text-center py-10">No risks encountered in Week {selectedWeek} yet.</div>
                 ) : (
                   <svg viewBox="0 0 200 200" className="w-full max-w-[200px] mx-auto bg-black/60 p-2 rounded-xl border border-white/10">
                     {heatmapData.map((row, yIdx) =>
