@@ -745,7 +745,26 @@ export default function App() {
 
             {/* Content */}
             <div className="p-8 max-w-6xl w-full mx-auto">
-              {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} />}
+              {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} onResetWorkspace={() => {
+                if (!window.confirm("Reset workspace? This will clear all projects, epics, sprints, stories, tasks, and risks, and restore the default seed data.")) return;
+                setProjects(INITIAL_PROJECTS);
+                setEpics([]);
+                setStories([]);
+                setSprints([]);
+                setTasks([]);
+                setRisks([]);
+                setNotifications([]);
+                setEmployees(INITIAL_TEAM_MEMBERS);
+                setTab("dashboard");
+                localStorage.removeItem("prismpm.projects");
+                localStorage.removeItem("prismpm.epics");
+                localStorage.removeItem("prismpm.stories");
+                localStorage.removeItem("prismpm.sprints");
+                localStorage.removeItem("prismpm.tasks");
+                localStorage.removeItem("prismpm.risks");
+                localStorage.removeItem(PM_STORAGE_KEY);
+                localStorage.removeItem("prismpm.notifications");
+              }} />}
               {tab === "team" && (
                 <TeamTab
                   employees={employees}
@@ -862,7 +881,7 @@ export default function App() {
 }
 
 // ─── Dashboard Tab Component ────────────────────────────────────────────────
-function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees }) {
+function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees, onResetWorkspace }) {
   const totalBudget = projects.reduce((sum, p) => sum + p.budget, 0);
   const totalSpent = projects.reduce((sum, p) => sum + p.spent, 0);
   const totalCriticalRisks = risks.filter(r => r.severity === "Critical").length;
@@ -901,18 +920,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-[#FFE600] font-bold text-xs uppercase tracking-widest">Enterprise Projects Portfolio</h2>
             <button
-              onClick={() => {
-                if (!window.confirm("Reset workspace? This will clear all projects, epics, sprints, stories, tasks, and risks, and restore the default seed data.")) return;
-                localStorage.removeItem("prismpm.projects");
-                localStorage.removeItem("prismpm.epics");
-                localStorage.removeItem("prismpm.stories");
-                localStorage.removeItem("prismpm.sprints");
-                localStorage.removeItem("prismpm.tasks");
-                localStorage.removeItem("prismpm.risks");
-                localStorage.removeItem(PM_STORAGE_KEY);
-                localStorage.removeItem("prismpm.notifications");
-                window.location.reload();
-              }}
+              onClick={onResetWorkspace}
               className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all"
             >
               Reset Workspace to Empty Slate
