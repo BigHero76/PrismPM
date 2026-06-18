@@ -2677,6 +2677,15 @@ Return ONLY this JSON (no markdown, no extra text):
     const existingLogs = project.weeklyLogs || [];
     const nextWeek = existingLogs.length + 1;
     const projectStoryList = stories.filter(s => s.projectId === project.id);
+
+    // Block simulation if AI Generator hasn't been run yet
+    if (projectStoryList.length === 0) {
+      alert("No project data found. Please go to AI Setup, upload a document or paste requirements, and run the AI Generator first."); return;
+    }
+    if (!aiInput.trim() && existingLogs.length === 0) {
+      alert("Please upload a document or paste requirements text in the AI Setup tab before simulating."); return;
+    }
+
     const totalPts = projectStoryList.reduce((sum, s) => sum + (s.points || 0), 0);
     const prevLog = existingLogs[existingLogs.length - 1] || null;
     const prevDone = prevLog ? prevLog.donePoints : 0;
@@ -2927,7 +2936,9 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
               ) : (
                 <button
                   onClick={handleSimulateWeek}
-                  className="px-3 py-1.5 bg-[#FFE600] text-black text-xs font-extrabold uppercase tracking-wider rounded-lg hover:bg-white transition-all"
+                  disabled={!aiInput.trim() && stories.filter(s => s.projectId === project.id).length === 0}
+                  title={!aiInput.trim() && stories.filter(s => s.projectId === project.id).length === 0 ? "Upload a document and run AI Generator first" : ""}
+                  className="px-3 py-1.5 bg-[#FFE600] text-black text-xs font-extrabold uppercase tracking-wider rounded-lg hover:bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   ▶ Simulate Week {project.weeklyLogs.length + 1}
                 </button>
