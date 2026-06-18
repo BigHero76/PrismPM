@@ -2743,12 +2743,20 @@ Return ONLY this JSON:
       }
 
       if (result && result.week) {
-        // Apply story status updates
+        // Apply story status updates from AI
         if (result.storyUpdates && result.storyUpdates.length > 0) {
           setStories(prev => prev.map(s => {
+            if (s.projectId !== project.id) return s;
             const update = result.storyUpdates.find(u => u.title === s.title);
             return update ? { ...s, status: update.status } : s;
           }));
+        }
+
+        // If project is fully complete, force ALL stories to Done so Gantt/epics reflect 100%
+        if ((result.remainingPoints ?? prevRemaining) <= 0) {
+          setStories(prev => prev.map(s =>
+            s.projectId === project.id ? { ...s, status: "Done" } : s
+          ));
         }
 
         // Append the new weekly log, update elapsed days and spent budget
