@@ -2462,9 +2462,7 @@ function ProjectDetail({
     : (totalPoints > 0 ? Math.round((completedStoriesCount / totalPoints) * 100) : 0);
 
   const elapsed = project.elapsed || (hasWeeklyData ? project.weeklyLogs.length * 7 : 0);
-  const spent = hasWeeklyData && currentWeekLog
-    ? Math.round(project.budget * (currentWeekLog.donePoints / (currentWeekLog.donePoints + currentWeekLog.remainingPoints)) * 0.9) || 0
-    : 0;
+  const spent = project.spent || 0;
 
   const delayDays = hasWeeklyData && currentWeekLog ? currentWeekLog.delayDays : 0;
   
@@ -2651,7 +2649,8 @@ Return ONLY this JSON (no markdown, no extra text):
               ...p,
               weeklyLogs: [],
               progress: 0,
-              elapsed: 0
+              elapsed: 0,
+              spent: 0
             };
           }
           return p;
@@ -2745,7 +2744,7 @@ Return ONLY this JSON:
           }));
         }
 
-        // Append the new weekly log and update elapsed days
+        // Append the new weekly log, update elapsed days and spent budget
         setProjects(prev => prev.map(p => {
           if (p.id !== project.id) return p;
           const newLog = {
@@ -2761,10 +2760,18 @@ Return ONLY this JSON:
             weekSummary: result.weekSummary || ""
           };
           const updatedLogs = [...(p.weeklyLogs || []), newLog];
+
+          // Budget burn: proportional to points done + 5% overrun per delay day
+          const totalPts = (newLog.donePoints + newLog.remainingPoints) || 1;
+          const baseSpend = Math.round(p.budget * (newLog.donePoints / totalPts));
+          const delayOverrun = Math.round(p.budget * 0.005 * (newLog.delayDays || 0));
+          const newSpent = Math.min(baseSpend + delayOverrun, Math.round(p.budget * 1.15)); // cap at 15% over budget
+
           return {
             ...p,
             weeklyLogs: updatedLogs,
             elapsed: updatedLogs.length * 7,
+            spent: newSpent,
           };
         }));
 
