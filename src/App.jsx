@@ -1575,21 +1575,40 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                       </div>
                     </div>
 
-                    <div className="border-t border-white/10 pt-3">
+                      <div className="border-t border-white/10 pt-3">
                       <div className="text-slate-500 text-[10px] uppercase mb-2">Sprint Backlog ({sprintStories.length} Stories)</div>
                       <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                        {sprintStories.map(st => (
-                          <div key={st.id} className="flex justify-between items-center bg-black/40 p-2 rounded-lg text-xs">
-                            <span className="text-white hover:underline cursor-pointer" onClick={() => setStoryDetailModal(st)}>{st.title}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-slate-400 font-mono">{st.points} pts</span>
-                              <button onClick={() => {
-                                setStories(prev => prev.map(s => s.id === st.id ? { ...s, sprintId: null } : s));
-                                addNotification(`Removed "${st.title}" from ${sprint.name}.`, "system");
-                              }} className="text-red-400 hover:text-white">✕</button>
+                        {sprintStories.map(st => {
+                          const isDone = st.status === "Done";
+                          const isInProgress = st.status === "In Progress";
+                          return (
+                            <div key={st.id} className={`flex justify-between items-center p-2 rounded-lg text-xs transition-all ${isDone ? "bg-green-950/30 border border-green-800/30" : isInProgress ? "bg-yellow-950/20 border border-yellow-800/20" : "bg-black/40"}`}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`text-base leading-none flex-shrink-0 ${isDone ? "text-green-400" : isInProgress ? "text-yellow-400" : "text-slate-600"}`}>
+                                  {isDone ? "✓" : isInProgress ? "◑" : "○"}
+                                </span>
+                                <span
+                                  onClick={() => setStoryDetailModal(st)}
+                                  className={`cursor-pointer hover:underline truncate ${isDone ? "line-through text-slate-500" : "text-white"}`}
+                                >
+                                  {st.title}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                <span className={`text-[10px] font-mono ${isDone ? "text-green-500" : "text-slate-400"}`}>{st.points} pts</span>
+                                {isDone
+                                  ? <span className="text-[9px] text-green-500 font-bold uppercase tracking-wider">Done</span>
+                                  : isInProgress
+                                    ? <span className="text-[9px] text-yellow-400 font-bold uppercase tracking-wider">Active</span>
+                                    : <button onClick={() => {
+                                        setStories(prev => prev.map(s => s.id === st.id ? { ...s, sprintId: null } : s));
+                                        addNotification(`Removed "${st.title}" from ${sprint.name}.`, "system");
+                                      }} className="text-red-400 hover:text-white">✕</button>
+                                }
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
