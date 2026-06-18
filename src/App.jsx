@@ -1706,30 +1706,50 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                   <div className="space-y-2.5 overflow-y-auto flex-1 pr-1">
                     {filteredStories.map(story => {
                       const storyTasks = tasks.filter(t => t.storyId === story.id);
-                      const completedTasks = storyTasks.filter(t => t.status === "Done").length;
-                      const taskProgress = storyTasks.length > 0 ? Math.round((completedTasks / storyTasks.length) * 100) : 0;
+                      const isDone = story.status === "Done";
+                      const isInProgress = story.status === "In Progress";
+                      // If story is Done, treat all tasks as done for display
+                      const completedTasks = isDone ? storyTasks.length : storyTasks.filter(t => t.status === "Done").length;
+                      const taskProgress = storyTasks.length > 0 ? Math.round((completedTasks / storyTasks.length) * 100) : (isDone ? 100 : 0);
+                      const epicName = epics.find(e => e.id === story.epicId)?.name;
                       return (
-                        <div key={story.id} className="bg-[#2E2E2E]/50 border border-white/10 rounded-xl p-3 space-y-3.5 hover:border-[#FFE600]/40 transition-all">
+                        <div key={story.id} className={`border rounded-xl p-3 space-y-2.5 hover:border-[#FFE600]/40 transition-all ${isDone ? "bg-green-950/20 border-green-800/20" : isInProgress ? "bg-yellow-950/10 border-yellow-800/15" : "bg-[#2E2E2E]/50 border-white/10"}`}>
+                          {/* Title + status dot */}
                           <div className="flex justify-between items-start gap-1">
-                            <span onClick={() => setStoryDetailModal(story)} className="text-white font-semibold text-[11px] hover:text-[#FFE600] cursor-pointer hover:underline line-clamp-2">
+                            <span onClick={() => setStoryDetailModal(story)} className={`font-semibold text-[11px] hover:text-[#FFE600] cursor-pointer hover:underline line-clamp-2 ${isDone ? "line-through text-slate-400" : "text-white"}`}>
                               {story.title}
+                            </span>
+                            <span className={`flex-shrink-0 text-xs leading-none mt-0.5 ${isDone ? "text-green-400" : isInProgress ? "text-yellow-400" : "text-slate-600"}`}>
+                              {isDone ? "✓" : isInProgress ? "◑" : "○"}
                             </span>
                           </div>
 
-                          <div className="flex justify-between items-center text-[10px] text-slate-400">
-                            <span>Assignee: <strong>{story.assignee || "Unassigned"}</strong></span>
+                          {/* Epic + points row */}
+                          <div className="flex justify-between items-center text-[9px]">
+                            {epicName
+                              ? <span className="text-indigo-400 bg-indigo-900/20 px-1.5 py-0.5 rounded truncate max-w-[100px]">{epicName}</span>
+                              : <span className="text-slate-600">No Epic</span>
+                            }
                             <span className="font-mono text-[#FFE600] font-bold">{story.points} pt</span>
                           </div>
 
-                          {storyTasks.length > 0 && (
-                            <div className="space-y-1">
-                              <div className="flex justify-between text-[9px] text-slate-500">
-                                <span>Tasks checklist</span>
-                                <span>{completedTasks}/{storyTasks.length} ({taskProgress}%)</span>
-                              </div>
-                              <ProgressBar value={taskProgress} />
+                          {/* Tasks checklist - always show, reflect real completion */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[9px] text-slate-500">
+                              <span>Tasks</span>
+                              <span className={completedTasks === storyTasks.length && storyTasks.length > 0 ? "text-green-400 font-bold" : ""}>
+                                {storyTasks.length === 0 ? "No tasks" : `${completedTasks}/${storyTasks.length} done`}
+                              </span>
                             </div>
-                          )}
+                            {storyTasks.length > 0 && (
+                              <div className="w-full bg-black/40 rounded-full h-1">
+                                <div
+                                  className={`h-1 rounded-full transition-all ${taskProgress === 100 ? "bg-green-400" : isInProgress ? "bg-[#FFE600]" : "bg-slate-600"}`}
+                                  style={{ width: `${taskProgress}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
 
                           {/* Simulated Drag & Drop Arrows */}
                           <div className="flex justify-between items-center border-t border-white/10 pt-2 text-[10px]">
@@ -1935,27 +1955,38 @@ function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories,
 
             {/* List */}
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {storyTasks.map(t => (
-                <div key={t.id} className="bg-black/30 border border-white/5 rounded-xl p-3 flex justify-between items-center gap-3">
-                  <div>
-                    <span className="text-white font-medium text-xs block">{t.name}</span>
-                    <span className="text-[10px] text-slate-500">Assignee: {t.assignee} · Due: {t.due}</span>
+              {storyTasks.map(t => {
+                const effectiveStatus = story.status === "Done" ? "Done" : t.status;
+                const tIsDone = effectiveStatus === "Done";
+                const tIsActive = effectiveStatus === "In Progress";
+                return (
+                  <div key={t.id} className={`border rounded-xl p-3 flex justify-between items-center gap-3 transition-all ${tIsDone ? "bg-green-950/20 border-green-800/25" : tIsActive ? "bg-yellow-950/15 border-yellow-800/20" : "bg-black/30 border-white/5"}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-sm flex-shrink-0 ${tIsDone ? "text-green-400" : tIsActive ? "text-yellow-400" : "text-slate-600"}`}>
+                        {tIsDone ? "✓" : tIsActive ? "◑" : "○"}
+                      </span>
+                      <div className="min-w-0">
+                        <span className={`font-medium text-xs block truncate ${tIsDone ? "line-through text-slate-500" : "text-white"}`}>{t.name}</span>
+                        {t.due && <span className="text-[9px] text-slate-600">Due: {t.due}</span>}
+                      </div>
+                    </div>
+                    <select
+                      value={effectiveStatus}
+                      disabled={story.status === "Done"}
+                      onChange={e => {
+                        const st = e.target.value;
+                        setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: st } : x));
+                        addNotification(`Task "${t.name}" → ${st}.`, "system");
+                      }}
+                      className={`bg-[#2E2E2E] border border-white/10 rounded text-[9px] p-1 flex-shrink-0 ${tIsDone ? "text-green-400" : tIsActive ? "text-yellow-400" : "text-white"} disabled:opacity-50`}
+                    >
+                      <option>To Do</option>
+                      <option>In Progress</option>
+                      <option>Done</option>
+                    </select>
                   </div>
-                  <select
-                    value={t.status}
-                    onChange={e => {
-                      const st = e.target.value;
-                      setTasks(prev => prev.map(x => x.id === t.id ? { ...x, status: st } : x));
-                      addNotification(`Task "${t.name}" status changed to ${st}.`, "system");
-                    }}
-                    className="bg-[#2E2E2E] border border-white/10 rounded text-[10px] text-white p-1"
-                  >
-                    <option>To Do</option>
-                    <option>In Progress</option>
-                    <option>Done</option>
-                  </select>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Manual Task Add */}
