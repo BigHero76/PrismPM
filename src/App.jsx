@@ -2468,10 +2468,10 @@ function ProjectDetail({
 
   const delayDays = hasWeeklyData && currentWeekLog ? currentWeekLog.delayDays : 0;
   
-  // Only show risks whose encounteredWeek has been simulated
+  // Filter risks active up to the selected week
   const activeRisks = hasWeeklyData
-    ? projectRisks.filter(r => !r.encounteredWeek || r.encounteredWeek <= selectedWeek)
-    : [];
+    ? projectRisks.filter(r => r.encounteredWeek <= selectedWeek)
+    : projectRisks;
 
   const handleDocumentUpload = async (file) => {
     if (!file) return;
@@ -2584,7 +2584,7 @@ Return ONLY this JSON (no markdown, no extra text):
             goal: sp.goal || "",
             startDate: sp.startDate || "",
             endDate: sp.endDate || "",
-            status: sp.status || "Future"
+            status: "Planned" // always start blank — simulation drives sprint progress
           };
         });
 
@@ -2601,7 +2601,7 @@ Return ONLY this JSON (no markdown, no extra text):
             points: Number(st.points) || 3,
             priority: st.priority || "Medium",
             moscow: st.moscow || "Should Have",
-            status: st.status || "To Do",
+            status: "Backlog", // always start blank — simulation drives progress
             score: 50
           };
         });
@@ -2612,7 +2612,7 @@ Return ONLY this JSON (no markdown, no extra text):
             storyId: storyMap[tk.storyTitle] || null,
             projectId: project.id,
             name: tk.name,
-            status: tk.status || "To Do",
+            status: "To Do", // always start blank — simulation drives progress
             priority: tk.priority || "Medium",
             due: tk.due || "",
             description: tk.description || "",
@@ -2649,7 +2649,9 @@ Return ONLY this JSON (no markdown, no extra text):
           if (p.id === project.id) {
             return {
               ...p,
-              weeklyLogs: mergedResult.weeklyLogs || []
+              weeklyLogs: [],
+              progress: 0,
+              elapsed: 0
             };
           }
           return p;
@@ -3144,10 +3146,8 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
               <p className="text-[10px] text-slate-500">Click a cell to filter risks.</p>
               
               <div className="w-full flex justify-center py-2">
-                {!hasWeeklyData ? (
-                  <div className="text-slate-500 text-xs text-center py-10">No risks revealed yet. Simulate weeks to uncover risks progressively.</div>
-                ) : activeRisks.length === 0 ? (
-                  <div className="text-slate-500 text-xs text-center py-10">No risks encountered in Week {selectedWeek} yet.</div>
+                {!hasWeeklyData && projectRisks.length === 0 ? (
+                  <div className="text-slate-500 text-xs text-center py-10">No risks identified. Run AI Generator.</div>
                 ) : (
                   <svg viewBox="0 0 200 200" className="w-full max-w-[200px] mx-auto bg-black/60 p-2 rounded-xl border border-white/10">
                     {heatmapData.map((row, yIdx) =>
