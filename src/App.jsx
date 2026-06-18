@@ -368,13 +368,10 @@ function LoginPage({ onLogin }) {
 
 // ─── Main App Component ──────────────────────────────────────────────────────
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    try { return localStorage.getItem("prismpm.isLoggedIn") === "true"; } catch { return false; }
-  });
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const handleLogin = () => {
     setIsLoggedIn(true);
-    try { localStorage.setItem("prismpm.isLoggedIn", "true"); } catch {}
   };
 
   const [tab, setTab] = useState("dashboard");
