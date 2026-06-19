@@ -1694,7 +1694,7 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
           </div>
 
           {/* Kanban Columns */}
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 overflow-x-auto pb-4">
+          <div className="flex gap-3 overflow-x-auto pb-4 min-h-[600px]">
             {["Backlog", "To Do", "In Progress", "Review", "Testing", "Done"].map(col => {
               const filteredStories = projectStories.filter(s => {
                 if (s.status !== col) return false;
@@ -1705,7 +1705,20 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
               });
 
               return (
-                <div key={col} className="bg-[#2E2E2E]/10 border border-white/5 rounded-2xl p-3 flex flex-col min-w-[170px] h-[550px]">
+                <div
+                  key={col}
+                  className="bg-[#2E2E2E]/10 border border-white/5 rounded-2xl p-3 flex flex-col flex-shrink-0 w-[190px]"
+                  onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add("border-[#FFE600]/50"); }}
+                  onDragLeave={e => { e.currentTarget.classList.remove("border-[#FFE600]/50"); }}
+                  onDrop={e => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove("border-[#FFE600]/50");
+                    const storyId = Number(e.dataTransfer.getData("storyId"));
+                    if (!storyId) return;
+                    setStories(prev => prev.map(s => s.id === storyId ? { ...s, status: col } : s));
+                    addNotification(`Moved story to ${col}.`, "system");
+                  }}
+                >
                   <div className="flex justify-between items-center mb-3 pb-2 border-b border-white/10">
                     <span className="text-white font-bold text-xs uppercase tracking-wider">{col}</span>
                     <span className="text-[10px] font-mono text-slate-500 bg-black/45 px-2 py-0.5 rounded-full">{filteredStories.length}</span>
@@ -1716,12 +1729,20 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                       const storyTasks = tasks.filter(t => t.storyId === story.id);
                       const isDone = story.status === "Done";
                       const isInProgress = story.status === "In Progress";
-                      // If story is Done, treat all tasks as done for display
                       const completedTasks = isDone ? storyTasks.length : storyTasks.filter(t => t.status === "Done").length;
                       const taskProgress = storyTasks.length > 0 ? Math.round((completedTasks / storyTasks.length) * 100) : (isDone ? 100 : 0);
                       const epicName = epics.find(e => e.id === story.epicId)?.name;
                       return (
-                        <div key={story.id} className={`border rounded-xl p-3 space-y-2.5 hover:border-[#FFE600]/40 transition-all ${isDone ? "bg-green-950/20 border-green-800/20" : isInProgress ? "bg-yellow-950/10 border-yellow-800/15" : "bg-[#2E2E2E]/50 border-white/10"}`}>
+                        <div
+                          key={story.id}
+                          draggable
+                          onDragStart={e => {
+                            e.dataTransfer.setData("storyId", story.id);
+                            e.currentTarget.style.opacity = "0.4";
+                          }}
+                          onDragEnd={e => { e.currentTarget.style.opacity = "1"; }}
+                          className={`border rounded-xl p-3 space-y-2.5 hover:border-[#FFE600]/40 transition-all cursor-grab active:cursor-grabbing ${isDone ? "bg-green-950/20 border-green-800/20" : isInProgress ? "bg-yellow-950/10 border-yellow-800/15" : "bg-[#2E2E2E]/50 border-white/10"}`}
+                        >
                           {/* Title + status dot */}
                           <div className="flex justify-between items-start gap-1">
                             <span onClick={() => setStoryDetailModal(story)} className={`font-semibold text-[11px] hover:text-[#FFE600] cursor-pointer hover:underline line-clamp-2 ${isDone ? "line-through text-slate-400" : "text-white"}`}>
@@ -1732,6 +1753,16 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                             </span>
                           </div>
 
+                          {/* Assignee row */}
+                          {story.assignee && story.assignee !== "Unassigned" && (
+                            <div className="flex items-center gap-1.5 text-[9px] text-slate-400">
+                              <span className="w-4 h-4 rounded-full bg-indigo-700 flex items-center justify-center text-white font-bold text-[8px] flex-shrink-0">
+                                {story.assignee.charAt(0)}
+                              </span>
+                              <span className="truncate">{story.assignee}</span>
+                            </div>
+                          )}
+
                           {/* Epic + points row */}
                           <div className="flex justify-between items-center text-[9px]">
                             {epicName
@@ -1741,7 +1772,7 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                             <span className="font-mono text-[#FFE600] font-bold">{story.points} pt</span>
                           </div>
 
-                          {/* Tasks checklist - always show, reflect real completion */}
+                          {/* Tasks checklist */}
                           <div className="space-y-1">
                             <div className="flex justify-between text-[9px] text-slate-500">
                               <span>Tasks</span>
@@ -1757,39 +1788,6 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                                 />
                               </div>
                             )}
-                          </div>
-
-                          {/* Simulated Drag & Drop Arrows */}
-                          <div className="flex justify-between items-center border-t border-white/10 pt-2 text-[10px]">
-                            <button
-                              onClick={() => {
-                                const cols = ["Backlog", "To Do", "In Progress", "Review", "Testing", "Done"];
-                                const idx = cols.indexOf(story.status);
-                                if (idx > 0) {
-                                  setStories(prev => prev.map(s => s.id === story.id ? { ...s, status: cols[idx - 1] } : s));
-                                  addNotification(`Moved "${story.title}" to ${cols[idx - 1]} status.`, "system");
-                                }
-                              }}
-                              className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded bg-black/40"
-                              disabled={story.status === "Backlog"}
-                            >
-                              ◀
-                            </button>
-                            <span className="text-[9px] text-slate-600 font-mono">Move</span>
-                            <button
-                              onClick={() => {
-                                const cols = ["Backlog", "To Do", "In Progress", "Review", "Testing", "Done"];
-                                const idx = cols.indexOf(story.status);
-                                if (idx < cols.length - 1) {
-                                  setStories(prev => prev.map(s => s.id === story.id ? { ...s, status: cols[idx + 1] } : s));
-                                  addNotification(`Moved "${story.title}" to ${cols[idx + 1]} status.`, "system");
-                                }
-                              }}
-                              className="text-slate-500 hover:text-white px-1.5 py-0.5 rounded bg-black/40"
-                              disabled={story.status === "Done"}
-                            >
-                              ▶
-                            </button>
                           </div>
                         </div>
                       );
@@ -2590,18 +2588,24 @@ function ProjectDetail({
 Description: ${project.description}
 Requirements: ${aiInput}`;
 
+      const teamRoster = project.team && project.team.length > 0
+        ? project.team.map(m => `${m.name} (${m.role})`).join(", ")
+        : employees.slice(0, 6).map(m => `${m.name} (${m.role})`).join(", ");
+
       // ── Call 1: Epics, Stories, Sprints, Tasks, Risks ──
       const structurePrompt = `${projectContext}
+Available team members: ${teamRoster}
 
 Generate a project structure with 3-4 epics, 6-8 user stories, 3 sprints, 2-3 tasks per story, and 3-4 risks.
 For Risks, assign encounteredWeek from 1 to 4.
+For stories and tasks, assign a team member from the available list based on their role and the work required.
 
 Return ONLY this JSON (no markdown, no extra text):
 {
   "epics": [{ "name": "string", "description": "string" }],
-  "stories": [{ "title": "string", "description": "As a... I want to... So that...", "points": 5, "priority": "High", "moscow": "Must Have", "epicName": "string", "sprintName": "Sprint 1", "status": "Done" }],
-  "sprints": [{ "name": "Sprint 1", "goal": "string", "startDate": "2026-06-01", "endDate": "2026-06-14", "status": "Closed" }],
-  "tasks": [{ "storyTitle": "string", "name": "string", "status": "Done", "priority": "High", "due": "2026-06-05", "description": "string" }],
+  "stories": [{ "title": "string", "description": "As a... I want to... So that...", "points": 5, "priority": "High", "moscow": "Must Have", "epicName": "string", "sprintName": "Sprint 1", "assignee": "Name from team roster" }],
+  "sprints": [{ "name": "Sprint 1", "goal": "string", "startDate": "2026-06-01", "endDate": "2026-06-14" }],
+  "tasks": [{ "storyTitle": "string", "name": "string", "priority": "High", "due": "2026-06-05", "description": "string", "assignee": "Name from team roster" }],
   "risks": [{ "title": "string", "severity": "High", "impact": "string", "probability": 70, "category": "Technical", "mitigationPlan": "string", "encounteredWeek": 2 }]
 }`;
 
@@ -2656,6 +2660,7 @@ Return ONLY this JSON (no markdown, no extra text):
             priority: st.priority || "Medium",
             moscow: st.moscow || "Should Have",
             status: "Backlog", // always start blank — simulation drives progress
+            assignee: st.assignee || null,
             score: 50
           };
         });
@@ -2669,6 +2674,7 @@ Return ONLY this JSON (no markdown, no extra text):
             status: "To Do", // always start blank — simulation drives progress
             priority: tk.priority || "Medium",
             due: tk.due || "",
+            assignee: tk.assignee || null,
             description: tk.description || "",
             attachments: [],
             comments: []
@@ -2860,28 +2866,105 @@ Return ONLY this JSON:
     }
   };
 
-  const exportProjectReport = () => {
-    const reportTxt = `
-========================================================================
-                         PROJECT STATUS REPORT
-========================================================================
-Project Name: ${project.name}
-Client: ${project.client}
-Overall Progress: ${progress}%
-Target Budget: $${project.budget.toLocaleString()} | Spent: $${spent.toLocaleString()}
-Story Completion Rate: ${completedStoriesCount}/${totalStoriesCount} (${Math.round((completedStoriesCount/totalStoriesCount)*100) || 0}%)
-Active Week: Week ${selectedWeek}
-Delay/Lag: ${delayDays} Days
+  const exportProjectPDF = () => {
+    const w = window.open("", "_blank");
+    const epicsHtml = projectEpics.map(ep => {
+      const epStories = projectStories.filter(s => s.epicId === ep.id);
+      return `<h3 style="color:#b8860b;margin:12px 0 4px">${ep.name}</h3>
+        <ul>${epStories.map(s => `<li>${s.title} — <b>${s.points}pts</b> — ${s.status}${s.assignee ? ` — 👤 ${s.assignee}` : ""}</li>`).join("")}</ul>`;
+    }).join("");
+    const risksHtml = activeRisks.map(r =>
+      `<tr><td>${r.title}</td><td>${r.severity}</td><td>${r.probability}%</td><td>${r.mitigationPlan}</td></tr>`
+    ).join("");
+    const weeksHtml = (project.weeklyLogs || []).map(l =>
+      `<tr><td>Week ${l.week}</td><td>${l.donePoints}</td><td>${l.remainingPoints}</td><td>${l.velocityActual}</td><td>${l.delayDays}d</td></tr>`
+    ).join("");
 
-RISKS REGISTER
---------------
-${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: ${r.mitigationPlan}`).join("\n")}
-    `;
-    const blob = new Blob([reportTxt], { type: "text/plain" });
+    w.document.write(`<!DOCTYPE html><html><head><title>Project Report — ${project.name}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}
+      h1{color:#000;border-bottom:3px solid #FFD700;padding-bottom:8px}
+      h2{color:#333;margin-top:28px;border-left:4px solid #FFD700;padding-left:10px}
+      h3{color:#555}
+      table{width:100%;border-collapse:collapse;margin:12px 0}
+      th{background:#222;color:#FFD700;padding:8px;text-align:left;font-size:12px}
+      td{padding:7px 8px;border-bottom:1px solid #eee;font-size:12px}
+      .kpi{display:inline-block;background:#f5f5f5;border:1px solid #ddd;border-radius:8px;padding:10px 20px;margin:6px;text-align:center}
+      .kpi b{display:block;font-size:22px;color:#b8860b}
+      @media print{body{padding:20px}}
+    </style></head><body>
+    <h1>📋 Project Status Report</h1>
+    <p><b>Project:</b> ${project.name} &nbsp;|&nbsp; <b>Client:</b> ${project.client} &nbsp;|&nbsp; <b>Type:</b> ${project.type}</p>
+
+    <h2>Key Metrics</h2>
+    <div>
+      <div class="kpi"><b>${progress}%</b>Progress</div>
+      <div class="kpi"><b>$${(project.spent||0).toLocaleString()} / $${project.budget.toLocaleString()}</b>Budget</div>
+      <div class="kpi"><b>${completedStoriesCount}/${totalStoriesCount}</b>Stories Done</div>
+      <div class="kpi"><b>${elapsed} days</b>Elapsed</div>
+      <div class="kpi"><b>${delayDays}d</b>Delay</div>
+    </div>
+
+    <h2>Epics & Stories</h2>${epicsHtml}
+
+    <h2>Weekly Execution Log</h2>
+    <table><thead><tr><th>Week</th><th>Points Done</th><th>Remaining</th><th>Velocity</th><th>Delay</th></tr></thead>
+    <tbody>${weeksHtml}</tbody></table>
+
+    <h2>Risk Register</h2>
+    <table><thead><tr><th>Risk</th><th>Severity</th><th>Probability</th><th>Mitigation</th></tr></thead>
+    <tbody>${risksHtml}</tbody></table>
+
+    <p style="margin-top:40px;color:#999;font-size:11px">Generated by PrismPM · ${new Date().toLocaleString()}</p>
+    <script>window.onload=()=>{window.print()}<\/script>
+    </body></html>`);
+    w.document.close();
+  };
+
+  const exportProjectDOCX = () => {
+    const epicsHtml = projectEpics.map(ep => {
+      const epStories = projectStories.filter(s => s.epicId === ep.id);
+      return `<h3>${ep.name}</h3><ul>${epStories.map(s =>
+        `<li>${s.title} — ${s.points}pts — ${s.status}${s.assignee ? ` — ${s.assignee}` : ""}</li>`
+      ).join("")}</ul>`;
+    }).join("");
+    const risksRows = activeRisks.map(r =>
+      `<tr><td>${r.title}</td><td>${r.severity}</td><td>${r.probability}%</td><td>${r.mitigationPlan}</td></tr>`
+    ).join("");
+    const weeksRows = (project.weeklyLogs || []).map(l =>
+      `<tr><td>Week ${l.week}</td><td>${l.donePoints}</td><td>${l.remainingPoints}</td><td>${l.velocityActual}</td><td>${l.delayDays}d</td></tr>`
+    ).join("");
+
+    const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office'
+      xmlns:w='urn:schemas-microsoft-com:office:word'
+      xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'><title>Project Report</title>
+    <style>
+      body{font-family:Calibri,Arial,sans-serif;font-size:11pt}
+      h1{font-size:18pt;color:#1a1a1a;border-bottom:2pt solid #b8860b}
+      h2{font-size:13pt;color:#333;border-left:4pt solid #b8860b;padding-left:6pt}
+      h3{font-size:11pt;color:#555}
+      table{border-collapse:collapse;width:100%}
+      th{background:#222;color:#FFD700;padding:5pt;font-size:9pt;border:1pt solid #aaa}
+      td{padding:4pt;border:1pt solid #ddd;font-size:9pt}
+    </style></head><body>
+    <h1>Project Status Report — ${project.name}</h1>
+    <p><b>Client:</b> ${project.client} &nbsp; <b>Type:</b> ${project.type} &nbsp; <b>Generated:</b> ${new Date().toLocaleDateString()}</p>
+    <h2>Key Metrics</h2>
+    <table><tr><th>Progress</th><th>Budget Spent</th><th>Budget Total</th><th>Stories Done</th><th>Elapsed</th><th>Delay</th></tr>
+    <tr><td>${progress}%</td><td>$${(project.spent||0).toLocaleString()}</td><td>$${project.budget.toLocaleString()}</td><td>${completedStoriesCount}/${totalStoriesCount}</td><td>${elapsed}d</td><td>${delayDays}d</td></tr></table>
+    <h2>Epics &amp; Stories</h2>${epicsHtml}
+    <h2>Weekly Execution Log</h2>
+    <table><tr><th>Week</th><th>Points Done</th><th>Remaining</th><th>Velocity</th><th>Delay</th></tr>${weeksRows}</table>
+    <h2>Risk Register</h2>
+    <table><tr><th>Risk</th><th>Severity</th><th>Probability</th><th>Mitigation</th></tr>${risksRows}</table>
+    </body></html>`;
+
+    const blob = new Blob(["\ufeff" + html], { type: "application/msword" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `StatusReport_${project.name}.txt`;
+    a.download = `Report_${project.name.replace(/\s+/g, "_")}.doc`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -2949,9 +3032,14 @@ ${activeRisks.map((r, i) => `${i + 1}. [${r.severity}] ${r.title} - Mitigation: 
           ← Back to Portfolio
         </button>
         <div className="flex gap-2">
-          <button onClick={exportProjectReport} className="px-3.5 py-1.5 bg-[#2E2E2E] border border-white/10 text-white text-xs font-bold rounded-xl">
-            Export Report (.txt)
-          </button>
+          <div className="flex gap-2">
+            <button onClick={exportProjectPDF} className="px-3.5 py-1.5 bg-[#2E2E2E] border border-white/10 text-white text-xs font-bold rounded-xl hover:border-[#FFE600] transition-all">
+              Export PDF
+            </button>
+            <button onClick={exportProjectDOCX} className="px-3.5 py-1.5 bg-[#2E2E2E] border border-white/10 text-white text-xs font-bold rounded-xl hover:border-[#FFE600] transition-all">
+              Export DOCX
+            </button>
+          </div>
           <button onClick={() => onDeleteProject(project.id)} className="px-3.5 py-1.5 bg-red-950/40 border border-red-800/20 text-red-400 text-xs font-bold rounded-xl">
             Delete Project
           </button>
