@@ -10,8 +10,57 @@ const EY = {
 
 // ─── Groq API Helper ────────────────────────────────────────────────────────
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+const GROQ_RATE_LIMIT_RETRIES = 1; // automatic retries on a 429 before giving up on a model
+const GROQ_MAX_WAIT_SECONDS = 30; // cap how long we'll auto-wait for a retry-after window
 
-async function callGroq(prompt, systemPrompt = "", apiKey = "") {
+// Genuine "this model can't be used" signals only — deliberately excludes the
+// bare word "model", since Groq's rate-limit messages also contain "model"
+// (e.g. "Rate limit reached for model `llama-3.1-8b-instant`"), which used to
+// cause rate limits to be misclassified as model-availability issues.
+const MODEL_UNAVAILABLE_PATTERN = /deprecated|decommissioned|does not exist|not have access|no access|model unavailable|model not found|unsupported model/i;
+
+async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens) {
+  const response = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt || "You are an expert project management AI assistant. Always respond with valid JSON only, no markdown, no extra text." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+        max_tokens: maxTokens,
+        response_format: {
+          type: "json_object",
+        },
+      }),
+    },
+  );
+
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data.error?.message || data.message || `Groq request failed (${response.status})`;
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  const text = data.choices?.[0]?.message?.content || "";
+  const clean = text.replace(/```json|```/g, "").trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    return { raw: text };
+  }
+}
+
+async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000) {
   const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
   if (!key) {
     throw new Error("Groq API key is missing. Add it in the BRD Generator panel.");
@@ -20,50 +69,34 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "") {
   let lastError = null;
 
   for (const model of GROQ_MODELS) {
-    try {
-      const response = await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: systemPrompt || "You are an expert project management AI assistant. Always respond with valid JSON only, no markdown, no extra text." },
-              { role: "user", content: prompt },
-            ],
-            temperature: 0.2,
-            max_tokens: 4000,
-            response_format: {
-              type: "json_object",
-            },
-          }),
-        },
-      );
+    let attempt = 0;
+    while (attempt <= GROQ_RATE_LIMIT_RETRIES) {
+      try {
+        return await callGroqOnce(model, prompt, systemPrompt, key, maxTokens);
+      } catch (e) {
+        lastError = e;
 
-      const data = await response.json();
-      if (!response.ok) {
-        const message = data.error?.message || data.message || `Groq request failed (${response.status})`;
-        lastError = new Error(message);
-        const modelIssue = /deprecated|not have access|no access|model|unavailable|not found|unsupported/i.test(message);
-        if (modelIssue && model !== GROQ_MODELS[GROQ_MODELS.length - 1]) {
-          continue;
+        // Rate limits are an org/token-budget problem, not a model problem —
+        // switching models doesn't help, so wait out the suggested cooldown
+        // and retry the SAME model instead of immediately surfacing an error.
+        if (e.status === 429) {
+          if (attempt < GROQ_RATE_LIMIT_RETRIES) {
+            const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
+            const waitSeconds = waitMatch ? parseFloat(waitMatch[1]) : 3;
+            await new Promise(res => setTimeout(res, Math.min(waitSeconds, GROQ_MAX_WAIT_SECONDS) * 1000 + 250));
+            attempt++;
+            continue;
+          }
+          break; // retries exhausted on this model — fall through to the next model in the list
         }
+
+        // Only switch models for genuine model-availability issues
+        if (MODEL_UNAVAILABLE_PATTERN.test(e.message) && model !== GROQ_MODELS[GROQ_MODELS.length - 1]) {
+          break;
+        }
+
         throw lastError;
       }
-
-      const text = data.choices?.[0]?.message?.content || "";
-      const clean = text.replace(/```json|```/g, "").trim();
-      try {
-        return JSON.parse(clean);
-      } catch {
-        return { raw: text };
-      }
-    } catch (e) {
-      lastError = e;
     }
   }
 
@@ -1068,7 +1101,8 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
       const result = await callGroq(
         `Based on this project description: "${proj.name} - ${proj.description}", generate 4 user stories.
         Return JSON with exactly this key format:
-        { "stories": [ { "title": "User Story Title", "description": "Story details", "priority": "High/Medium/Low", "points": 1/2/3/5/8/13, "epicName": "Core Module" } ] }`
+        { "stories": [ { "title": "User Story Title", "description": "Story details", "priority": "High/Medium/Low", "points": 1/2/3/5/8/13, "epicName": "Core Module" } ] }`,
+        "", "", 1500
       );
       if (result && Array.isArray(result.stories)) {
         let createdCount = 0;
@@ -1123,7 +1157,8 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
         Total Team Capacity is ${capacityTotal} points.
         Divide these stories into recommended sprint packages.
         Return JSON with:
-        { "recommendedSprints": [ { "name": "Sprint 3: Core Implementation", "goal": "Deliver auth validation and setup", "storyIds": [list of numbers], "reason": "string rationale" } ] }`
+        { "recommendedSprints": [ { "name": "Sprint 3: Core Implementation", "goal": "Deliver auth validation and setup", "storyIds": [list of numbers], "reason": "string rationale" } ] }`,
+        "", "", 1500
       );
       if (result && Array.isArray(result.recommendedSprints)) {
         result.recommendedSprints.forEach(sprintRec => {
@@ -1841,7 +1876,8 @@ function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories,
       const result = await callGroq(
         `Generate 3 sub-tasks required to complete the user story: "${story.title} - ${story.description}".
         Return JSON with exactly this key format:
-        { "tasks": [ { "name": "Task name", "estimateDays": 2, "description": "Action details", "priority": "High/Medium/Low" } ] }`
+        { "tasks": [ { "name": "Task name", "estimateDays": 2, "description": "Action details", "priority": "High/Medium/Low" } ] }`,
+        "", "", 800
       );
       if (result && Array.isArray(result.tasks)) {
         result.tasks.forEach(tData => {
@@ -2814,7 +2850,7 @@ Return ONLY this JSON:
   "weekSummary": "<2-3 sentence natural language summary of what happened this week>"
 }`;
 
-      const result = await callGroq(prompt, "You are an expert agile project manager AI. Always respond with valid JSON only.", key);
+      const result = await callGroq(prompt, "You are an expert agile project manager AI. Always respond with valid JSON only.", key, 1500);
 
       // If callGroq fell back to {raw: text}, JSON.parse failed — surface the error
       if (result && result.raw) {
