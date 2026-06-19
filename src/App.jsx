@@ -10,14 +10,19 @@ const EY = {
 
 // ─── Groq API Helper ────────────────────────────────────────────────────────
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
-const GROQ_RATE_LIMIT_RETRIES = 1; // automatic retries on a 429 before giving up on a model
+const GROQ_RETRIES_PER_MODEL = 1; // automatic retries (rate-limit cooldown OR bigger token budget) before giving up on a model
 const GROQ_MAX_WAIT_SECONDS = 30; // cap how long we'll auto-wait for a retry-after window
+const GROQ_MAX_TOKENS_CEILING = 4000; // never auto-grow the budget past the original blanket default
 
 // Genuine "this model can't be used" signals only — deliberately excludes the
 // bare word "model", since Groq's rate-limit messages also contain "model"
 // (e.g. "Rate limit reached for model `llama-3.1-8b-instant`"), which used to
 // cause rate limits to be misclassified as model-availability issues.
 const MODEL_UNAVAILABLE_PATTERN = /deprecated|decommissioned|does not exist|not have access|no access|model unavailable|model not found|unsupported model/i;
+
+// Groq's strict JSON mode rejects the response if the model didn't produce
+// complete, valid JSON — most often because max_tokens cut it off mid-object.
+const JSON_TRUNCATION_PATTERN = /failed to generate json|failed_generation/i;
 
 async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens) {
   const response = await fetch(
@@ -67,12 +72,13 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000
   }
 
   let lastError = null;
+  let effectiveMaxTokens = maxTokens;
 
   for (const model of GROQ_MODELS) {
     let attempt = 0;
-    while (attempt <= GROQ_RATE_LIMIT_RETRIES) {
+    while (attempt <= GROQ_RETRIES_PER_MODEL) {
       try {
-        return await callGroqOnce(model, prompt, systemPrompt, key, maxTokens);
+        return await callGroqOnce(model, prompt, systemPrompt, key, effectiveMaxTokens);
       } catch (e) {
         lastError = e;
 
@@ -80,7 +86,7 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000
         // switching models doesn't help, so wait out the suggested cooldown
         // and retry the SAME model instead of immediately surfacing an error.
         if (e.status === 429) {
-          if (attempt < GROQ_RATE_LIMIT_RETRIES) {
+          if (attempt < GROQ_RETRIES_PER_MODEL) {
             const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
             const waitSeconds = waitMatch ? parseFloat(waitMatch[1]) : 3;
             await new Promise(res => setTimeout(res, Math.min(waitSeconds, GROQ_MAX_WAIT_SECONDS) * 1000 + 250));
@@ -88,6 +94,14 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000
             continue;
           }
           break; // retries exhausted on this model — fall through to the next model in the list
+        }
+
+        // The response likely got truncated before valid JSON could close —
+        // give it more room and retry the same model once.
+        if (JSON_TRUNCATION_PATTERN.test(e.message) && attempt < GROQ_RETRIES_PER_MODEL && effectiveMaxTokens < GROQ_MAX_TOKENS_CEILING) {
+          effectiveMaxTokens = Math.min(effectiveMaxTokens * 2, GROQ_MAX_TOKENS_CEILING);
+          attempt++;
+          continue;
         }
 
         // Only switch models for genuine model-availability issues
@@ -1877,7 +1891,7 @@ function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories,
         `Generate 3 sub-tasks required to complete the user story: "${story.title} - ${story.description}".
         Return JSON with exactly this key format:
         { "tasks": [ { "name": "Task name", "estimateDays": 2, "description": "Action details", "priority": "High/Medium/Low" } ] }`,
-        "", "", 800
+        "", "", 1000
       );
       if (result && Array.isArray(result.tasks)) {
         result.tasks.forEach(tData => {
@@ -2850,7 +2864,7 @@ Return ONLY this JSON:
   "weekSummary": "<2-3 sentence natural language summary of what happened this week>"
 }`;
 
-      const result = await callGroq(prompt, "You are an expert agile project manager AI. Always respond with valid JSON only.", key, 1500);
+      const result = await callGroq(prompt, "You are an expert agile project manager AI. Always respond with valid JSON only.", key, 2500);
 
       // If callGroq fell back to {raw: text}, JSON.parse failed — surface the error
       if (result && result.raw) {
