@@ -131,6 +131,22 @@ const INITIAL_TEAM_MEMBERS = [
   { name: "Tunde Adeyemi", role: "Android Dev", skillStars: 3, specialty: "Kotlin", projects: 1, available: true, assignedPm: "James Okonkwo" },
   { name: "Aisha Omar", role: "QA", skillStars: 3, specialty: "Manual / Healthcare", projects: 2, available: false, assignedPm: "Sarah Chen" },
   { name: "Luca Rossi", role: "Architect", skillStars: 4, specialty: "Cloud / AWS", projects: 1, available: true, assignedPm: "Omar Khalid" },
+  { name: "Hana Kobayashi", role: "Backend Dev", skillStars: 5, specialty: "Node.js / Microservices", projects: 1, available: false, assignedPm: "Sarah Chen" },
+  { name: "Carlos Mendes", role: "Backend Dev", skillStars: 4, specialty: "Java / Spring Boot", projects: 2, available: true },
+  { name: "Freya Lindqvist", role: "Frontend Dev", skillStars: 5, specialty: "React / Design Systems", projects: 1, available: false, assignedPm: "James Okonkwo" },
+  { name: "Ibrahim Toure", role: "Frontend Dev", skillStars: 3, specialty: "Vue / Accessibility", projects: 1, available: true },
+  { name: "Olivia Bennett", role: "DevOps Engineer", skillStars: 4, specialty: "CI/CD / Kubernetes", projects: 2, available: true },
+  { name: "Yusuf Demir", role: "DevOps Engineer", skillStars: 5, specialty: "AWS / Terraform", projects: 1, available: false, assignedPm: "Omar Khalid" },
+  { name: "Grace Mwangi", role: "Data Scientist", skillStars: 5, specialty: "Predictive Analytics / ML", projects: 1, available: true },
+  { name: "Tomás Fernández", role: "Data Scientist", skillStars: 4, specialty: "NLP / Forecasting", projects: 1, available: false, assignedPm: "Nadia Rahman" },
+  { name: "Sophie Laurent", role: "UX Designer", skillStars: 5, specialty: "Research / Prototyping", projects: 2, available: true },
+  { name: "Kenji Watanabe", role: "UX Designer", skillStars: 4, specialty: "Mobile UX / Usability", projects: 1, available: false, assignedPm: "James Okonkwo" },
+  { name: "Adaeze Nwosu", role: "Security Engineer", skillStars: 5, specialty: "AppSec / Pen Testing", projects: 1, available: false, assignedPm: "Sarah Chen" },
+  { name: "Viktor Petrov", role: "Security Engineer", skillStars: 4, specialty: "Compliance / SOC2", projects: 2, available: true },
+  { name: "Layla Haddad", role: "Scrum Master", skillStars: 4, specialty: "Agile Coaching / SAFe", projects: 3, available: true },
+  { name: "Connor Murphy", role: "QA Automation", skillStars: 4, specialty: "Selenium / Cypress", projects: 1, available: true },
+  { name: "Pranav Iyer", role: "Database Admin", skillStars: 5, specialty: "PostgreSQL / Performance Tuning", projects: 2, available: false, assignedPm: "Maya Singh" },
+  { name: "Naledi Dlamini", role: "Technical Writer", skillStars: 3, specialty: "API Docs / BRDs", projects: 1, available: true },
 ];
 
 const PM_STORAGE_KEY = "prismpm.team";
