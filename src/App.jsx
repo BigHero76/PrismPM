@@ -3172,16 +3172,25 @@ Return ONLY this JSON:
             </div>
           </div>
 
-          {hasWeeklyData && currentWeekLog && currentWeekLog.risks && currentWeekLog.risks.length > 0 && (
-            <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5">
-              <h4 className="text-white text-xs font-bold uppercase tracking-widest mb-3">Risks Encountered in Week {selectedWeek}</h4>
-              <ul className="list-disc pl-4 text-xs text-slate-300 space-y-1.5">
-                {currentWeekLog.risks.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {hasWeeklyData && simulatedWeekCount > 0 && (() => {
+            const weekRisks = projectRisks.filter(r => r.encounteredWeek === selectedWeek);
+            if (weekRisks.length === 0) return null;
+            return (
+              <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5">
+                <h4 className="text-white text-xs font-bold uppercase tracking-widest mb-3">Risks Encountered in Week {selectedWeek}</h4>
+                <ul className="space-y-2">
+                  {weekRisks.map(r => (
+                    <li key={r.id} className="flex items-start gap-2 text-xs text-slate-300">
+                      <span className={`flex-shrink-0 font-bold text-[10px] px-1.5 py-0.5 rounded ${r.severity === "Critical" ? "bg-red-900/50 text-red-300" : r.severity === "High" ? "bg-orange-900/50 text-orange-300" : "bg-yellow-900/30 text-yellow-300"}`}>
+                        {r.severity}
+                      </span>
+                      <span>{r.title} — <span className="text-slate-500">{r.mitigationPlan}</span></span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
         </div>
       )}
 
