@@ -2150,12 +2150,22 @@ function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories,
 }
 
 // ─── Team Tab Component ──────────────────────────────────────────────────────
+const EMPTY_NEW_PROJECT = {
+  name: "", client: "", clientStars: 3, pm: "", ba: "", type: "",
+  description: "", plannedDays: 90, budget: 100000,
+};
+
 function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDropMemberFromProject, onCreateProject, onDeleteProject }) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showProjectForm, setShowProjectForm] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [newMember, setNewMember] = useState({ name: "", role: "BA", specialty: "", assignedPm: "", skillStars: 4 });
+  const [newProject, setNewProject] = useState(EMPTY_NEW_PROJECT);
+  const [projectFormError, setProjectFormError] = useState("");
 
   const activeProj = projects.find(p => p.id === Number(selectedProjectId));
+  const pmOptions = employees.filter(e => e.role === "PM");
+  const baOptions = employees.filter(e => e.role === "BA");
 
   const handleFormSubmit = (e) => {
     e.preventDefault();
@@ -2173,21 +2183,196 @@ function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDro
     setShowAddForm(false);
   };
 
+  const handleProjectFormSubmit = (e) => {
+    e.preventDefault();
+    setProjectFormError("");
+    if (!newProject.name.trim() || !newProject.client.trim() || !newProject.pm) {
+      setProjectFormError("Project name, client, and PM are required.");
+      return;
+    }
+
+    const pmRecord = employees.find(e => e.name === newProject.pm && e.role === "PM");
+    const baRecord = employees.find(e => e.name === newProject.ba && e.role === "BA");
+
+    if (!pmRecord) {
+      setProjectFormError("Selected PM is no longer in the roster — please re-select.");
+      return;
+    }
+
+    // Team starts with PM (+ BA if chosen) — identical shape to the seeded
+    // projects' team arrays, so AgileBoard/ProjectDetail/risk-matrix/compatibility
+    // scoring all work exactly the same as they do for the original 3 projects.
+    const team = [
+      pmRecord ? { name: pmRecord.name, role: "PM", skillStars: pmRecord.skillStars, specialty: pmRecord.specialty } : null,
+      baRecord ? { name: baRecord.name, role: "BA", skillStars: baRecord.skillStars, specialty: baRecord.specialty } : null,
+    ].filter(Boolean);
+
+    const project = {
+      id: Date.now(),
+      name: newProject.name.trim(),
+      client: newProject.client.trim(),
+      clientStars: Number(newProject.clientStars) || 3,
+      pm: pmRecord.name,
+      ba: baRecord ? baRecord.name : "Unassigned",
+      type: newProject.type.trim() || "General",
+      status: "On Track",
+      progress: 0,
+      plannedDays: Number(newProject.plannedDays) || 90,
+      elapsed: 0,
+      description: newProject.description.trim() || "No description provided yet.",
+      budget: Number(newProject.budget) || 0,
+      spent: 0,
+      team,
+      weeklyLogs: [],
+    };
+
+    onCreateProject(project);
+    setNewProject(EMPTY_NEW_PROJECT);
+    setShowProjectForm(false);
+  };
+
   return (
     <div className="space-y-6">
+      {/* New Project Creation */}
+      <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-white text-sm font-bold uppercase tracking-wider">Project Setup</h3>
+          <button onClick={() => { setShowProjectForm(!showProjectForm); setProjectFormError(""); }} className="text-xs text-[#FFE600] font-bold hover:underline">
+            {showProjectForm ? "Hide Form" : "+ New Project"}
+          </button>
+        </div>
+
+        {showProjectForm && (
+          <form onSubmit={handleProjectFormSubmit} className="bg-black/60 p-4 border border-white/10 rounded-xl space-y-3">
+            {pmOptions.length === 0 && (
+              <div className="text-[11px] text-amber-400 bg-amber-900/20 border border-amber-800/30 rounded-lg px-3 py-2">
+                No PMs in the roster yet. Add a roster member with role "PM" before creating a project.
+              </div>
+            )}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <input
+                value={newProject.name}
+                onChange={e => setNewProject(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Project Name"
+                required
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              />
+              <input
+                value={newProject.client}
+                onChange={e => setNewProject(prev => ({ ...prev, client: e.target.value }))}
+                placeholder="Client Name"
+                required
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              />
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <select
+                value={newProject.pm}
+                onChange={e => setNewProject(prev => ({ ...prev, pm: e.target.value }))}
+                required
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              >
+                <option value="">Assign Project Manager...</option>
+                {pmOptions.map(pm => <option key={pm.name} value={pm.name}>{pm.name} ({pm.specialty})</option>)}
+              </select>
+              <select
+                value={newProject.ba}
+                onChange={e => setNewProject(prev => ({ ...prev, ba: e.target.value }))}
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              >
+                <option value="">Assign Business Analyst (optional)...</option>
+                {baOptions.map(ba => <option key={ba.name} value={ba.name}>{ba.name} ({ba.specialty})</option>)}
+              </select>
+            </div>
+
+            <input
+              value={newProject.type}
+              onChange={e => setNewProject(prev => ({ ...prev, type: e.target.value }))}
+              placeholder="Project Type (e.g. Mobile App, Healthcare SaaS)"
+              className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+            />
+
+            <textarea
+              value={newProject.description}
+              onChange={e => setNewProject(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Short project description..."
+              rows={2}
+              className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white resize-none"
+            />
+
+            <div className="grid sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Client Importance (1-5 ★)</label>
+                <select
+                  value={newProject.clientStars}
+                  onChange={e => setNewProject(prev => ({ ...prev, clientStars: e.target.value }))}
+                  className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+                >
+                  {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} Star{n !== 1 ? "s" : ""}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Planned Duration (days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={newProject.plannedDays}
+                  onChange={e => setNewProject(prev => ({ ...prev, plannedDays: e.target.value }))}
+                  className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">Budget ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={newProject.budget}
+                  onChange={e => setNewProject(prev => ({ ...prev, budget: e.target.value }))}
+                  className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            {projectFormError && (
+              <div className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
+                {projectFormError}
+              </div>
+            )}
+
+            <button type="submit" className="w-full py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded">
+              Create Project
+            </button>
+            <p className="text-[10px] text-slate-500 text-center">
+              New projects get the full feature set — Agile Board, AI BRD generation, AI risk &amp; timeline tools, compatibility scoring — same as every other project.
+            </p>
+          </form>
+        )}
+      </div>
+
       <div className="grid md:grid-cols-[1.8fr_1.2fr] gap-6">
         {/* Allocations workspace */}
         <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-white text-sm font-bold uppercase tracking-wider">Project Team Allocation</h3>
-            <select
-              value={selectedProjectId}
-              onChange={e => setSelectedProjectId(e.target.value)}
-              className="bg-black border border-white/20 rounded-lg px-3 py-1 text-xs text-white"
-            >
-              <option value="">Choose Active Project...</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedProjectId}
+                onChange={e => setSelectedProjectId(e.target.value)}
+                className="bg-black border border-white/20 rounded-lg px-3 py-1 text-xs text-white"
+              >
+                <option value="">Choose Active Project...</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {activeProj && (
+                <button
+                  onClick={() => { onDeleteProject(activeProj.id); setSelectedProjectId(""); }}
+                  className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all"
+                >
+                  Delete Project
+                </button>
+              )}
+            </div>
           </div>
 
           {activeProj ? (
