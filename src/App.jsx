@@ -839,7 +839,7 @@ export default function App() {
                   onDeleteProject={handleDeleteProject}
                 />
               )}
-              {tab === "brd" && <BRDTab projects={projects} setProjects={setProjects} stories={stories} setStories={setStories} addNotification={addNotification} />}
+              {tab === "brd" && <BRDTab projects={projects} setProjects={setProjects} stories={stories} setStories={setStories} employees={employees} onCreateProject={handleCreateProject} onNavigateToDashboard={() => setTab("dashboard")} addNotification={addNotification} />}
               {tab === "agile" && (
                 <AgileBoardTab
                   projectId={activeProjectId}
@@ -2495,45 +2495,66 @@ function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDro
 }
 
 // ─── BRD Generator Tab Component (Enhanced Prompt + Create Project) ─────────
-function BRDTab({ projects, setProjects, stories, setStories, addNotification }) {
-  const [form, setForm] = useState({ problem: "", goal: "", stakeholders: "", constraints: "", assumptions: "", clientName: "", projectType: "Healthcare SaaS" });
+function BRDTab({ projects, setProjects, stories, setStories, employees, onCreateProject, onNavigateToDashboard, addNotification }) {
+  const [form, setForm] = useState({
+    problem: "", goal: "", stakeholders: "", constraints: "", assumptions: "",
+    clientName: "", projectType: "Healthcare SaaS",
+    pm: "", ba: "", clientStars: 4, plannedDays: 120,
+  });
   const [brd, setBrd] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState(false);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("prismpm.groqApiKey") || "");
+
+  const pmOptions = employees.filter(e => e.role === "PM");
+  const baOptions = employees.filter(e => e.role === "BA");
 
   useEffect(() => {
     if (apiKey) localStorage.setItem("prismpm.groqApiKey", apiKey);
   }, [apiKey]);
 
+  // Pre-select first available PM/BA when employees load
+  useEffect(() => {
+    if (!form.pm && pmOptions.length > 0) setForm(f => ({ ...f, pm: pmOptions[0].name }));
+    if (!form.ba && baOptions.length > 0) setForm(f => ({ ...f, ba: baOptions[0].name }));
+  }, [employees.length]);
+
   const generateBRD = async () => {
-    if (!form.problem || !form.goal || !apiKey) return;
+    if (!form.problem || !form.goal || !apiKey) {
+      alert("Business Problem, Project Goal, and Groq API Key are all required.");
+      return;
+    }
     setLoading(true);
     setBrd(null);
+    setCreated(false);
     try {
       const result = await callGroq(
         `Generate a professional Business Requirements Document (BRD).
-        Client: ${form.clientName || "TBD"}
-        Project Type: ${form.projectType}
-        Business Problem: ${form.problem}
-        Goal: ${form.goal}
-        Stakeholders: ${form.stakeholders}
-        Constraints: ${form.constraints}
-        Assumptions: ${form.assumptions}
+Client: ${form.clientName || "TBD"}
+Project Type: ${form.projectType}
+Business Problem: ${form.problem}
+Goal: ${form.goal}
+Stakeholders: ${form.stakeholders}
+Constraints: ${form.constraints}
+Assumptions: ${form.assumptions}
 
-        Return JSON with exact keys:
-        {
-          "executiveSummary": "string",
-          "businessObjectives": [list],
-          "projectScope": { "inScope": [list], "outOfScope": [list] },
-          "stakeholders": [ {"role": "string", "name": "string", "responsibility": "string"} ],
-          "functionalRequirements": [list],
-          "nonFunctionalRequirements": [list],
-          "userPersonas": [ {"name": "string", "role": "string", "description": "string", "goals": "string"} ],
-          "userStories": [ {"asA": "string", "iWantTo": "string", "soThat": "string", "acceptanceCriteria": "string", "points": 3} ],
-          "risks": [list of strings],
-          "assumptions": [list],
-          "successMetrics": [list]
-        }`,
+Return JSON with exact keys:
+{
+  "executiveSummary": "string",
+  "businessObjectives": ["string"],
+  "projectScope": { "inScope": ["string"], "outOfScope": ["string"] },
+  "stakeholders": [{"role": "string", "name": "string", "responsibility": "string"}],
+  "functionalRequirements": ["string"],
+  "nonFunctionalRequirements": ["string"],
+  "userPersonas": [{"name": "string", "role": "string", "description": "string", "goals": "string"}],
+  "userStories": [{"asA": "string", "iWantTo": "string", "soThat": "string", "acceptanceCriteria": "string", "points": 3}],
+  "risks": ["string"],
+  "assumptions": ["string"],
+  "successMetrics": ["string"],
+  "estimatedBudget": 150000,
+  "budgetReasoning": "string"
+}`,
         "",
         apiKey
       );
@@ -2548,34 +2569,48 @@ function BRDTab({ projects, setProjects, stories, setStories, addNotification })
 
   const handleCreateProjectFromBRD = () => {
     if (!brd) return;
+    if (!form.pm) { alert("Please select a Project Manager before creating the project."); return; }
+
+    setCreating(true);
+
+    const pmRecord = employees.find(e => e.name === form.pm && e.role === "PM");
+    const baRecord = employees.find(e => e.name === form.ba && e.role === "BA");
+
+    const team = [
+      pmRecord ? { name: pmRecord.name, role: "PM", skillStars: pmRecord.skillStars, specialty: pmRecord.specialty } : null,
+      baRecord ? { name: baRecord.name, role: "BA", skillStars: baRecord.skillStars, specialty: baRecord.specialty } : null,
+    ].filter(Boolean);
+
     const projectId = Date.now();
+    const aiBudget = Number(brd.estimatedBudget) || null;
+
     const newProj = {
       id: projectId,
-      name: `${form.clientName || "New Client"} ${form.projectType}`,
+      name: form.clientName ? `${form.clientName} — ${form.projectType}` : form.projectType,
       client: form.clientName || "Enterprise Client",
-      clientStars: 4,
-      pm: "Sarah Chen",
-      ba: "Marcus Webb",
+      clientStars: Number(form.clientStars) || 4,
+      pm: pmRecord ? pmRecord.name : "Unassigned",
+      ba: baRecord ? baRecord.name : "Unassigned",
       type: form.projectType,
       status: "On Track",
       progress: 0,
-      plannedDays: 120,
+      plannedDays: Number(form.plannedDays) || 120,
       elapsed: 0,
       description: brd.executiveSummary || "AI Generated Project.",
-      // No budget yet — same rule as every other project. Go to AI Setup with
-      // the requirements doc to get an AI estimate, or set one manually.
-      budget: null,
-      budgetSource: null,
+      budget: aiBudget,
+      budgetSource: aiBudget != null ? "ai" : null,
+      budgetReasoning: brd.budgetReasoning || "",
       spent: 0,
-      team: [
-        { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Fintech" },
-        { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking" }
-      ],
-      weeklyLogs: []
+      team,
+      weeklyLogs: [],
     };
-    setProjects(prev => [newProj, ...prev]);
 
-    if (Array.isArray(brd.userStories)) {
+    // Route through the real handler — updates employee allocation counts,
+    // calculates compatibility score, fires the creation notification.
+    onCreateProject(newProj);
+
+    // Seed user stories from the BRD into the global stories state
+    if (Array.isArray(brd.userStories) && brd.userStories.length > 0) {
       const storyObjects = brd.userStories.map((us, i) => ({
         id: Date.now() + i + Math.random(),
         projectId,
@@ -2593,8 +2628,9 @@ function BRDTab({ projects, setProjects, stories, setStories, addNotification })
       setStories(prev => [...prev, ...storyObjects]);
     }
 
-    addNotification(`Imported project and user stories from generated BRD.`, "system");
-    alert("Project and Stories successfully created!");
+    setCreating(false);
+    setCreated(true);
+    addNotification(`Project "${newProj.name}" created from BRD with ${brd.userStories?.length || 0} user stories.`, "system");
   };
 
   const exportBRDToTXT = () => {
@@ -2605,6 +2641,7 @@ function BRDTab({ projects, setProjects, stories, setStories, addNotification })
 ========================================================================
 Project Type: ${form.projectType}
 Client: ${form.clientName || "Enterprise Client"}
+PM: ${form.pm || "TBD"} | BA: ${form.ba || "TBD"}
 Generated At: ${new Date().toLocaleString()}
 
 EXECUTIVE SUMMARY
@@ -2622,9 +2659,16 @@ ${brd.projectScope?.inScope?.map(s => ` - ${s}`).join("\n") || "N/A"}
 Out of Scope:
 ${brd.projectScope?.outOfScope?.map(s => ` - ${s}`).join("\n") || "N/A"}
 
+FUNCTIONAL REQUIREMENTS
+-----------------------
+${brd.functionalRequirements?.map((r, i) => `FR${i+1}: ${r}`).join("\n") || "N/A"}
+
 USER STORIES
 ------------
 ${brd.userStories?.map((us, i) => `US ${i + 1}: As a ${us.asA}, I want to ${us.iWantTo} so that ${us.soThat}`).join("\n") || "N/A"}
+
+ESTIMATED BUDGET: $${Number(brd.estimatedBudget || 0).toLocaleString()}
+BUDGET REASONING: ${brd.budgetReasoning || "N/A"}
     `;
     const blob = new Blob([fileContent], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
@@ -2637,15 +2681,17 @@ ${brd.userStories?.map((us, i) => `US ${i + 1}: As a ${us.asA}, I want to ${us.i
 
   return (
     <div className="space-y-6">
+      {/* Input Form */}
       <div className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-6 space-y-4">
         <h3 className="text-[#FFE600] font-bold text-sm uppercase tracking-widest flex items-center gap-2">
           <span>✦</span> Enhanced AI BRD Generator
         </h3>
 
+        {/* Row 1: Client + Project Type */}
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="text-slate-400 text-xs uppercase mb-1.5 block">Client Name</label>
-            <input value={form.clientName} onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder="NexaBank Ltd" className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+            <input value={form.clientName} onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))} placeholder="e.g. NexaBank Ltd" className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
           </div>
           <div>
             <label className="text-slate-400 text-xs uppercase mb-1.5 block">Project Type</label>
@@ -2653,53 +2699,122 @@ ${brd.userStories?.map((us, i) => `US ${i + 1}: As a ${us.asA}, I want to ${us.i
           </div>
         </div>
 
+        {/* Row 2: PM + BA + Client Stars + Planned Days */}
+        <div className="grid md:grid-cols-4 gap-3">
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Project Manager *</label>
+            <select value={form.pm} onChange={e => setForm(f => ({ ...f, pm: e.target.value }))} className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white">
+              <option value="">Select PM...</option>
+              {pmOptions.map(pm => <option key={pm.name} value={pm.name}>{pm.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Business Analyst</label>
+            <select value={form.ba} onChange={e => setForm(f => ({ ...f, ba: e.target.value }))} className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white">
+              <option value="">Select BA...</option>
+              {baOptions.map(ba => <option key={ba.name} value={ba.name}>{ba.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Client Importance</label>
+            <select value={form.clientStars} onChange={e => setForm(f => ({ ...f, clientStars: e.target.value }))} className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white">
+              {[1,2,3,4,5].map(n => <option key={n} value={n}>{n} Star{n !== 1 ? "s" : ""}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Planned Duration (days)</label>
+            <input type="number" min="1" value={form.plannedDays} onChange={e => setForm(f => ({ ...f, plannedDays: e.target.value }))} className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+          </div>
+        </div>
+
+        {/* Row 3: Problem + Goal */}
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="text-slate-400 text-xs uppercase mb-1.5 block">Business Problem *</label>
-            <textarea value={form.problem} onChange={e => setForm(f => ({ ...f, problem: e.target.value }))} rows={2} placeholder="Explain the business bottleneck..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" required />
+            <textarea value={form.problem} onChange={e => setForm(f => ({ ...f, problem: e.target.value }))} rows={3} placeholder="Explain the business bottleneck or pain point..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white resize-none" />
           </div>
           <div>
             <label className="text-slate-400 text-xs uppercase mb-1.5 block">Project Goal *</label>
-            <textarea value={form.goal} onChange={e => setForm(f => ({ ...f, goal: e.target.value }))} rows={2} placeholder="Define the end state target..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" required />
+            <textarea value={form.goal} onChange={e => setForm(f => ({ ...f, goal: e.target.value }))} rows={3} placeholder="Define the desired end state and success criteria..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white resize-none" />
           </div>
         </div>
 
+        {/* Row 4: Stakeholders + Constraints + Assumptions */}
         <div className="grid md:grid-cols-3 gap-3">
-          <input value={form.stakeholders} onChange={e => setForm(f => ({ ...f, stakeholders: e.target.value }))} placeholder="Stakeholders (e.g. Risk officers)" className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white" />
-          <input value={form.constraints} onChange={e => setForm(f => ({ ...f, constraints: e.target.value }))} placeholder="Constraints (e.g. Budget ceiling)" className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white" />
-          <input value={form.assumptions} onChange={e => setForm(f => ({ ...f, assumptions: e.target.value }))} placeholder="Assumptions" className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white" />
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Stakeholders</label>
+            <input value={form.stakeholders} onChange={e => setForm(f => ({ ...f, stakeholders: e.target.value }))} placeholder="e.g. Risk officers, CTO" className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Constraints</label>
+            <input value={form.constraints} onChange={e => setForm(f => ({ ...f, constraints: e.target.value }))} placeholder="e.g. Budget ceiling, compliance rules" className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1.5 block">Assumptions</label>
+            <input value={form.assumptions} onChange={e => setForm(f => ({ ...f, assumptions: e.target.value }))} placeholder="e.g. API access available" className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+          </div>
         </div>
 
+        {/* API Key */}
         <div>
           <label className="text-slate-400 text-xs uppercase mb-1 block">Groq API Key</label>
           <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Paste Groq API Key..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
         </div>
 
-        <button onClick={generateBRD} disabled={loading} className="w-full py-2.5 bg-[#FFE600] text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all">
+        <button onClick={generateBRD} disabled={loading || !form.problem || !form.goal || !apiKey} className="w-full py-2.5 bg-[#FFE600] disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all">
           {loading ? "Generating specifications..." : "✦ AI Generate Specs"}
         </button>
       </div>
 
+      {/* Generated BRD Output */}
       {brd && (
         <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-6 space-y-6">
-          <div className="flex justify-between items-center border-b border-white/10 pb-4">
-            <h4 className="text-white font-bold text-sm">Generated Specifications</h4>
-            <div className="flex gap-2">
-              <button onClick={handleCreateProjectFromBRD} className="px-3.5 py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded-lg">
-                Create Project from BRD
-              </button>
-              <button onClick={exportBRDToTXT} className="px-3.5 py-1.5 bg-white text-black text-xs font-bold rounded-lg">
-                Export Report (.txt)
+
+          {/* Action bar */}
+          <div className="flex justify-between items-start gap-4 border-b border-white/10 pb-4 flex-wrap">
+            <div>
+              <h4 className="text-white font-bold text-sm mb-0.5">Generated Specifications</h4>
+              <p className="text-slate-500 text-[10px]">
+                {form.clientName || "Project"} · {form.projectType} · PM: {form.pm || "Unassigned"} · BA: {form.ba || "Unassigned"}
+                {brd.estimatedBudget ? ` · AI Budget Estimate: $${Number(brd.estimatedBudget).toLocaleString()}` : ""}
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {!created ? (
+                <button
+                  onClick={handleCreateProjectFromBRD}
+                  disabled={creating || !form.pm}
+                  className="px-4 py-2 bg-[#FFE600] disabled:opacity-40 text-black text-xs font-bold rounded-lg flex items-center gap-1.5"
+                >
+                  {creating ? "Creating..." : "✦ Push to Dashboard"}
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-400 text-xs font-bold">✓ Project added to Dashboard</span>
+                  <button
+                    onClick={onNavigateToDashboard}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-all"
+                  >
+                    Go to Dashboard →
+                  </button>
+                </div>
+              )}
+              <button onClick={exportBRDToTXT} className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg transition-all">
+                Export .txt
               </button>
             </div>
           </div>
 
-          <div className="space-y-4">
+          {/* BRD Sections */}
+          <div className="space-y-5">
+
+            {/* Executive Summary */}
             <div className="space-y-1">
               <span className="text-[#FFE600] text-[10px] font-bold uppercase tracking-wider">Executive Summary</span>
               <p className="text-slate-300 text-xs leading-relaxed">{brd.executiveSummary}</p>
             </div>
 
+            {/* Objectives + Scope */}
             <div className="grid md:grid-cols-2 gap-4">
               <div className="bg-black/30 p-4 rounded-xl">
                 <span className="text-white text-xs font-bold block mb-2">Business Objectives</span>
@@ -2708,23 +2823,117 @@ ${brd.userStories?.map((us, i) => `US ${i + 1}: As a ${us.asA}, I want to ${us.i
                 </ul>
               </div>
               <div className="bg-black/30 p-4 rounded-xl">
-                <span className="text-white text-xs font-bold block mb-2">Project Scope (In-Scope)</span>
-                <ul className="list-disc pl-4 text-xs text-[#FFE600] space-y-1">
+                <span className="text-white text-xs font-bold block mb-1">In Scope</span>
+                <ul className="list-disc pl-4 text-xs text-[#FFE600] space-y-1 mb-3">
                   {brd.projectScope?.inScope?.map((o, i) => <li key={i}>{o}</li>)}
+                </ul>
+                <span className="text-slate-500 text-xs font-bold block mb-1">Out of Scope</span>
+                <ul className="list-disc pl-4 text-xs text-slate-500 space-y-1">
+                  {brd.projectScope?.outOfScope?.map((o, i) => <li key={i}>{o}</li>)}
                 </ul>
               </div>
             </div>
 
+            {/* Functional + Non-functional Requirements */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-black/30 p-4 rounded-xl">
+                <span className="text-white text-xs font-bold block mb-2">Functional Requirements</span>
+                <ul className="space-y-1">
+                  {brd.functionalRequirements?.map((r, i) => (
+                    <li key={i} className="flex gap-2 text-xs text-slate-300">
+                      <span className="text-[#FFE600] font-mono font-bold text-[10px] mt-0.5">FR{i+1}</span>{r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="bg-black/30 p-4 rounded-xl">
+                <span className="text-white text-xs font-bold block mb-2">Non-Functional Requirements</span>
+                <ul className="space-y-1">
+                  {brd.nonFunctionalRequirements?.map((r, i) => (
+                    <li key={i} className="flex gap-2 text-xs text-slate-300">
+                      <span className="text-slate-500 font-mono font-bold text-[10px] mt-0.5">NFR{i+1}</span>{r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* Stakeholders */}
+            {brd.stakeholders?.length > 0 && (
+              <div className="bg-black/30 p-4 rounded-xl">
+                <span className="text-white text-xs font-bold block mb-2">Stakeholders</span>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {brd.stakeholders.map((s, i) => (
+                    <div key={i} className="flex gap-2 text-xs">
+                      <span className="text-[#FFE600] font-bold min-w-[90px]">{s.role}</span>
+                      <span className="text-slate-400">{s.name}</span>
+                      <span className="text-slate-600">— {s.responsibility}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* User Stories */}
             <div className="space-y-2">
-              <span className="text-white text-xs font-bold block">User Stories ({brd.userStories?.length || 0})</span>
-              <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
+              <span className="text-white text-xs font-bold block">User Stories ({brd.userStories?.length || 0}) <span className="text-slate-500 font-normal">— will be seeded into the project backlog</span></span>
+              <div className="grid gap-2 max-h-52 overflow-y-auto pr-1">
                 {brd.userStories?.map((us, i) => (
-                  <div key={i} className="bg-black/35 p-3 rounded-lg border border-white/5 text-xs">
-                    <strong>As a:</strong> {us.asA} | <strong>I want to:</strong> {us.iWantTo} | <strong>So that:</strong> {us.soThat}
+                  <div key={i} className="bg-black/35 p-3 rounded-lg border border-white/5 text-xs flex justify-between items-start gap-3">
+                    <span className="text-slate-300"><strong className="text-white">As a</strong> {us.asA} — <strong className="text-white">I want to</strong> {us.iWantTo} — <strong className="text-white">So that</strong> {us.soThat}</span>
+                    <span className="text-[#FFE600] font-mono font-bold flex-shrink-0">{us.points}pt</span>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* Risks + Success Metrics */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="bg-black/30 p-4 rounded-xl">
+                <span className="text-white text-xs font-bold block mb-2">Identified Risks</span>
+                <ul className="space-y-1">
+                  {brd.risks?.map((r, i) => (
+                    <li key={i} className="flex gap-2 text-xs text-slate-300"><span className="text-rose-400">⚠</span>{r}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="bg-black/30 p-4 rounded-xl">
+                <span className="text-white text-xs font-bold block mb-2">Success Metrics</span>
+                <ul className="space-y-1">
+                  {brd.successMetrics?.map((m, i) => (
+                    <li key={i} className="flex gap-2 text-xs text-slate-300"><span className="text-emerald-400">✓</span>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            {/* AI Budget Estimate */}
+            {brd.estimatedBudget && (
+              <div className="bg-[#FFE600]/5 border border-[#FFE600]/20 rounded-xl p-4 flex items-start gap-3">
+                <span className="text-[#FFE600] text-lg">💰</span>
+                <div>
+                  <span className="text-[#FFE600] text-xs font-bold block mb-0.5">AI Budget Estimate</span>
+                  <span className="text-white font-mono font-bold text-lg">${Number(brd.estimatedBudget).toLocaleString()}</span>
+                  {brd.budgetReasoning && <p className="text-slate-400 text-[11px] mt-1 italic">{brd.budgetReasoning}</p>}
+                  <p className="text-slate-500 text-[10px] mt-1">This figure is applied to the project automatically. You can edit it manually in the project&apos;s Overview tab.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Post-creation CTA */}
+            {created && (
+              <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4 flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="text-emerald-400 font-bold text-sm">✓ Project successfully pushed to Dashboard</p>
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    Head to the Dashboard to see it, then open it and use <strong>AI Setup</strong> to generate epics, sprints, tasks, and a full simulation.
+                  </p>
+                </div>
+                <button onClick={onNavigateToDashboard} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg transition-all flex-shrink-0">
+                  Go to Dashboard →
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
