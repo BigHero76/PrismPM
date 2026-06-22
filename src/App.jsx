@@ -124,7 +124,7 @@ const INITIAL_PROJECTS = [
     pm: "Sarah Chen", ba: "Marcus Webb", type: "Enterprise Banking",
     status: "On Track", progress: 0, plannedDays: 120, elapsed: 0,
     description: "Core banking system modernisation with API-first architecture.",
-    budget: 280000, spent: 0,
+    budget: 280000, budgetSource: "manual", spent: 0,
     team: [
       { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Fintech" },
       { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking" }
@@ -136,7 +136,7 @@ const INITIAL_PROJECTS = [
     pm: "James Okonkwo", ba: "Priya Sharma", type: "Mobile App",
     status: "On Track", progress: 0, plannedDays: 90, elapsed: 0,
     description: "Customer-facing loyalty & shopping mobile app for iOS and Android.",
-    budget: 95000, spent: 0,
+    budget: 95000, budgetSource: "manual", spent: 0,
     team: [
       { name: "James Okonkwo", role: "PM", skillStars: 4, specialty: "Mobile Apps" },
       { name: "Priya Sharma", role: "BA", skillStars: 4, specialty: "Retail" }
@@ -148,7 +148,7 @@ const INITIAL_PROJECTS = [
     pm: "Sarah Chen", ba: "Elena Volkov", type: "Healthcare SaaS",
     status: "On Track", progress: 0, plannedDays: 150, elapsed: 0,
     description: "Telehealth and patient management SaaS platform with HL7 FHIR compliance.",
-    budget: 420000, spent: 0,
+    budget: 420000, budgetSource: "manual", spent: 0,
     team: [
       { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Healthcare" },
       { name: "Elena Volkov", role: "BA", skillStars: 5, specialty: "Healthcare" }
@@ -808,7 +808,7 @@ export default function App() {
 
             {/* Content */}
             <div className="p-8 max-w-6xl w-full mx-auto">
-              {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} onResetWorkspace={() => {
+              {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} onCreateProject={handleCreateProject} onResetWorkspace={() => {
                 if (!window.confirm("Reset workspace? This will clear all projects, epics, sprints, stories, tasks, and risks, and restore the default seed data.")) return;
                 setProjects(INITIAL_PROJECTS);
                 setEpics([]);
@@ -944,9 +944,10 @@ export default function App() {
 }
 
 // ─── Dashboard Tab Component ────────────────────────────────────────────────
-function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees, onResetWorkspace }) {
-  const totalBudget = projects.reduce((sum, p) => sum + p.budget, 0);
-  const totalSpent = projects.reduce((sum, p) => sum + p.spent, 0);
+function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees, onCreateProject, onResetWorkspace }) {
+  const budgetedProjects = projects.filter(p => p.budget != null);
+  const totalBudget = budgetedProjects.reduce((sum, p) => sum + p.budget, 0);
+  const totalSpent = budgetedProjects.reduce((sum, p) => sum + (p.spent || 0), 0);
   const totalCriticalRisks = risks.filter(r => r.severity === "Critical").length;
   const delayedTasks = tasks.filter(t => t.status !== "Done" && (new Date(t.due) < new Date()));
 
@@ -965,7 +966,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
           { label: "Active Projects", value: projects.length, icon: "◈", color: "text-[#FFE600]" },
           { label: "Critical Risks", value: totalCriticalRisks, icon: "⚠", color: "text-rose-400" },
           { label: "Overdue Tasks", value: delayedTasks.length, icon: "⏱", color: "text-amber-400" },
-          { label: "Budget Utilization", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "0%", icon: "💰", color: "text-white" },
+          { label: "Budget Utilization", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "—", icon: "💰", color: "text-white" },
         ].map((k) => (
           <div key={k.label} className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-5 hover:border-[#FFE600]/30 transition-all duration-300">
             <div className="flex items-center gap-2 mb-1.5">
@@ -976,6 +977,9 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
           </div>
         ))}
       </div>
+
+      {/* New Project Creation */}
+      <NewProjectPanel employees={employees} onCreateProject={onCreateProject} />
 
       {/* Portfolio Overview Section */}
       <div className="grid gap-6">
@@ -994,6 +998,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
               const projRisks = risks.filter(r => r.projectId === p.id);
               const projStories = stories.filter(s => s.projectId === p.id);
               const isCritical = projRisks.some(r => r.severity === "Critical");
+              const hasBudget = p.budget != null;
               return (
                 <div key={p.id}
                   className="bg-[#2E2E2E]/30 border border-white/10 rounded-2xl p-6 cursor-pointer hover:border-[#FFE600]/40 hover:bg-[#2E2E2E]/60 transition-all duration-300 group"
@@ -1020,10 +1025,16 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
                     </div>
                     <div className="text-right min-w-[150px] w-full md:w-auto">
                       <div className="text-slate-500 text-[10px] uppercase mb-1">Budget Burn</div>
-                      <div className="font-mono text-sm text-white mb-1.5">
-                        ${(p.spent / 1000).toFixed(0)}k <span className="text-slate-500">/ ${(p.budget / 1000).toFixed(0)}k</span>
-                      </div>
-                      <ProgressBar value={(p.spent / p.budget) * 100} />
+                      {hasBudget ? (
+                        <>
+                          <div className="font-mono text-sm text-white mb-1.5">
+                            ${(p.spent / 1000).toFixed(0)}k <span className="text-slate-500">/ ${(p.budget / 1000).toFixed(0)}k</span>
+                          </div>
+                          <ProgressBar value={(p.spent / p.budget) * 100} />
+                        </>
+                      ) : (
+                        <div className="text-[10px] text-amber-400/80 italic">Awaiting AI estimate</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2152,36 +2163,17 @@ function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories,
 // ─── Team Tab Component ──────────────────────────────────────────────────────
 const EMPTY_NEW_PROJECT = {
   name: "", client: "", clientStars: 3, pm: "", ba: "", type: "",
-  description: "", plannedDays: 90, budget: 100000,
+  description: "", plannedDays: 90,
 };
 
-function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDropMemberFromProject, onCreateProject, onDeleteProject }) {
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [showProjectForm, setShowProjectForm] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [newMember, setNewMember] = useState({ name: "", role: "BA", specialty: "", assignedPm: "", skillStars: 4 });
+// ─── New Project Panel (shared by Dashboard + Team tabs) ────────────────────
+function NewProjectPanel({ employees, onCreateProject, defaultOpen = false }) {
+  const [showProjectForm, setShowProjectForm] = useState(defaultOpen);
   const [newProject, setNewProject] = useState(EMPTY_NEW_PROJECT);
   const [projectFormError, setProjectFormError] = useState("");
 
-  const activeProj = projects.find(p => p.id === Number(selectedProjectId));
   const pmOptions = employees.filter(e => e.role === "PM");
   const baOptions = employees.filter(e => e.role === "BA");
-
-  const handleFormSubmit = (e) => {
-    e.preventDefault();
-    if (!newMember.name.trim()) return;
-    onAddMember({
-      name: newMember.name,
-      role: newMember.role,
-      specialty: newMember.specialty || newMember.role,
-      assignedPm: newMember.assignedPm || "Unassigned",
-      skillStars: Number(newMember.skillStars) || 4,
-      projects: 0,
-      available: true
-    });
-    setNewMember({ name: "", role: "BA", specialty: "", assignedPm: "", skillStars: 4 });
-    setShowAddForm(false);
-  };
 
   const handleProjectFormSubmit = (e) => {
     e.preventDefault();
@@ -2220,7 +2212,11 @@ function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDro
       plannedDays: Number(newProject.plannedDays) || 90,
       elapsed: 0,
       description: newProject.description.trim() || "No description provided yet.",
-      budget: Number(newProject.budget) || 0,
+      // Budget is intentionally NOT set here. It's decided later by the AI
+      // (from the requirements doc in AI Setup) or entered manually in the
+      // project's Overview tab. Until then it stays null and budget UI hides.
+      budget: null,
+      budgetSource: null,
       spent: 0,
       team,
       weeklyLogs: [],
@@ -2232,123 +2228,145 @@ function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDro
   };
 
   return (
-    <div className="space-y-6">
-      {/* New Project Creation */}
-      <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4">
-        <div className="flex justify-between items-center">
-          <h3 className="text-white text-sm font-bold uppercase tracking-wider">Project Setup</h3>
-          <button onClick={() => { setShowProjectForm(!showProjectForm); setProjectFormError(""); }} className="text-xs text-[#FFE600] font-bold hover:underline">
-            {showProjectForm ? "Hide Form" : "+ New Project"}
-          </button>
-        </div>
+    <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-white text-sm font-bold uppercase tracking-wider">Project Setup</h3>
+        <button onClick={() => { setShowProjectForm(!showProjectForm); setProjectFormError(""); }} className="text-xs text-[#FFE600] font-bold hover:underline">
+          {showProjectForm ? "Hide Form" : "+ New Project"}
+        </button>
+      </div>
 
-        {showProjectForm && (
-          <form onSubmit={handleProjectFormSubmit} className="bg-black/60 p-4 border border-white/10 rounded-xl space-y-3">
-            {pmOptions.length === 0 && (
-              <div className="text-[11px] text-amber-400 bg-amber-900/20 border border-amber-800/30 rounded-lg px-3 py-2">
-                No PMs in the roster yet. Add a roster member with role "PM" before creating a project.
-              </div>
-            )}
-            <div className="grid sm:grid-cols-2 gap-3">
-              <input
-                value={newProject.name}
-                onChange={e => setNewProject(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Project Name"
-                required
-                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-              />
-              <input
-                value={newProject.client}
-                onChange={e => setNewProject(prev => ({ ...prev, client: e.target.value }))}
-                placeholder="Client Name"
-                required
-                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-              />
+      {showProjectForm && (
+        <form onSubmit={handleProjectFormSubmit} className="bg-black/60 p-4 border border-white/10 rounded-xl space-y-3">
+          {pmOptions.length === 0 && (
+            <div className="text-[11px] text-amber-400 bg-amber-900/20 border border-amber-800/30 rounded-lg px-3 py-2">
+              No PMs in the roster yet. Add a roster member with role "PM" before creating a project.
             </div>
-
-            <div className="grid sm:grid-cols-2 gap-3">
-              <select
-                value={newProject.pm}
-                onChange={e => setNewProject(prev => ({ ...prev, pm: e.target.value }))}
-                required
-                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-              >
-                <option value="">Assign Project Manager...</option>
-                {pmOptions.map(pm => <option key={pm.name} value={pm.name}>{pm.name} ({pm.specialty})</option>)}
-              </select>
-              <select
-                value={newProject.ba}
-                onChange={e => setNewProject(prev => ({ ...prev, ba: e.target.value }))}
-                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-              >
-                <option value="">Assign Business Analyst (optional)...</option>
-                {baOptions.map(ba => <option key={ba.name} value={ba.name}>{ba.name} ({ba.specialty})</option>)}
-              </select>
-            </div>
-
+          )}
+          <div className="grid sm:grid-cols-2 gap-3">
             <input
-              value={newProject.type}
-              onChange={e => setNewProject(prev => ({ ...prev, type: e.target.value }))}
-              placeholder="Project Type (e.g. Mobile App, Healthcare SaaS)"
+              value={newProject.name}
+              onChange={e => setNewProject(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="Project Name"
+              required
               className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
             />
-
-            <textarea
-              value={newProject.description}
-              onChange={e => setNewProject(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Short project description..."
-              rows={2}
-              className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white resize-none"
+            <input
+              value={newProject.client}
+              onChange={e => setNewProject(prev => ({ ...prev, client: e.target.value }))}
+              placeholder="Client Name"
+              required
+              className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
             />
+          </div>
 
-            <div className="grid sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Client Importance (1-5 ★)</label>
-                <select
-                  value={newProject.clientStars}
-                  onChange={e => setNewProject(prev => ({ ...prev, clientStars: e.target.value }))}
-                  className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-                >
-                  {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} Star{n !== 1 ? "s" : ""}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Planned Duration (days)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={newProject.plannedDays}
-                  onChange={e => setNewProject(prev => ({ ...prev, plannedDays: e.target.value }))}
-                  className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Budget ($)</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={newProject.budget}
-                  onChange={e => setNewProject(prev => ({ ...prev, budget: e.target.value }))}
-                  className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
-                />
-              </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <select
+              value={newProject.pm}
+              onChange={e => setNewProject(prev => ({ ...prev, pm: e.target.value }))}
+              required
+              className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+            >
+              <option value="">Assign Project Manager...</option>
+              {pmOptions.map(pm => <option key={pm.name} value={pm.name}>{pm.name} ({pm.specialty})</option>)}
+            </select>
+            <select
+              value={newProject.ba}
+              onChange={e => setNewProject(prev => ({ ...prev, ba: e.target.value }))}
+              className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+            >
+              <option value="">Assign Business Analyst (optional)...</option>
+              {baOptions.map(ba => <option key={ba.name} value={ba.name}>{ba.name} ({ba.specialty})</option>)}
+            </select>
+          </div>
+
+          <input
+            value={newProject.type}
+            onChange={e => setNewProject(prev => ({ ...prev, type: e.target.value }))}
+            placeholder="Project Type (e.g. Mobile App, Healthcare SaaS)"
+            className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+          />
+
+          <textarea
+            value={newProject.description}
+            onChange={e => setNewProject(prev => ({ ...prev, description: e.target.value }))}
+            placeholder="Short project description..."
+            rows={2}
+            className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white resize-none"
+          />
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">Client Importance (1-5 ★)</label>
+              <select
+                value={newProject.clientStars}
+                onChange={e => setNewProject(prev => ({ ...prev, clientStars: e.target.value }))}
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              >
+                {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} Star{n !== 1 ? "s" : ""}</option>)}
+              </select>
             </div>
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">Planned Duration (days)</label>
+              <input
+                type="number"
+                min="1"
+                value={newProject.plannedDays}
+                onChange={e => setNewProject(prev => ({ ...prev, plannedDays: e.target.value }))}
+                className="w-full bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white"
+              />
+            </div>
+          </div>
 
-            {projectFormError && (
-              <div className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
-                {projectFormError}
-              </div>
-            )}
+          <div className="text-[10px] text-slate-500 bg-black/40 border border-white/5 rounded-lg px-3 py-2">
+            💰 No budget field here — once the project is created, head to its <strong className="text-slate-400">AI Setup</strong> tab and provide the client’s requirements document. The AI will propose a budget, which you can then accept or edit manually.
+          </div>
 
-            <button type="submit" className="w-full py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded">
-              Create Project
-            </button>
-            <p className="text-[10px] text-slate-500 text-center">
-              New projects get the full feature set — Agile Board, AI BRD generation, AI risk &amp; timeline tools, compatibility scoring — same as every other project.
-            </p>
-          </form>
-        )}
-      </div>
+          {projectFormError && (
+            <div className="text-[11px] text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">
+              {projectFormError}
+            </div>
+          )}
+
+          <button type="submit" className="w-full py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded">
+            Create Project
+          </button>
+          <p className="text-[10px] text-slate-500 text-center">
+            New projects get the full feature set — Agile Board, AI BRD generation, AI risk &amp; timeline tools, compatibility scoring — same as every other project.
+          </p>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function TeamTab({ employees, onAddMember, projects, onAddMemberToProject, onDropMemberFromProject, onCreateProject, onDeleteProject }) {
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [newMember, setNewMember] = useState({ name: "", role: "BA", specialty: "", assignedPm: "", skillStars: 4 });
+
+  const activeProj = projects.find(p => p.id === Number(selectedProjectId));
+
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    if (!newMember.name.trim()) return;
+    onAddMember({
+      name: newMember.name,
+      role: newMember.role,
+      specialty: newMember.specialty || newMember.role,
+      assignedPm: newMember.assignedPm || "Unassigned",
+      skillStars: Number(newMember.skillStars) || 4,
+      projects: 0,
+      available: true
+    });
+    setNewMember({ name: "", role: "BA", specialty: "", assignedPm: "", skillStars: 4 });
+    setShowAddForm(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* New Project Creation */}
+      <NewProjectPanel employees={employees} onCreateProject={onCreateProject} />
 
       <div className="grid md:grid-cols-[1.8fr_1.2fr] gap-6">
         {/* Allocations workspace */}
@@ -2544,12 +2562,16 @@ function BRDTab({ projects, setProjects, stories, setStories, addNotification })
       plannedDays: 120,
       elapsed: 0,
       description: brd.executiveSummary || "AI Generated Project.",
-      budget: 150000,
+      // No budget yet — same rule as every other project. Go to AI Setup with
+      // the requirements doc to get an AI estimate, or set one manually.
+      budget: null,
+      budgetSource: null,
       spent: 0,
       team: [
         { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Fintech" },
         { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking" }
-      ]
+      ],
+      weeklyLogs: []
     };
     setProjects(prev => [newProj, ...prev]);
 
@@ -2710,6 +2732,80 @@ ${brd.userStories?.map((us, i) => `US ${i + 1}: As a ${us.asA}, I want to ${us.i
   );
 }
 
+// ─── Budget Panel (AI-estimated, manually editable) ──────────────────────────
+function BudgetPanel({ project, setProjects, addNotification }) {
+  const [editing, setEditing] = useState(false);
+  const [draftBudget, setDraftBudget] = useState(project.budget ?? 0);
+
+  const spent = project.spent || 0;
+  const budget = project.budget || 0;
+  const pctUsed = budget > 0 ? Math.round((spent / budget) * 100) : 0;
+  const overBudget = spent > budget;
+
+  const startEditing = () => {
+    setDraftBudget(project.budget ?? 0);
+    setEditing(true);
+  };
+
+  const saveBudget = () => {
+    const value = Number(draftBudget);
+    if (!Number.isFinite(value) || value < 0) return;
+    setProjects(prev => prev.map(p => p.id === project.id ? { ...p, budget: value, budgetSource: "manual" } : p));
+    addNotification(`Budget for "${project.name}" manually set to $${value.toLocaleString()}.`, "system");
+    setEditing(false);
+  };
+
+  return (
+    <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 space-y-3">
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500 text-xs font-bold uppercase">Budget</span>
+          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${project.budgetSource === "ai" ? "bg-[#FFE600]/15 text-[#FFE600]" : "bg-white/10 text-slate-300"}`}>
+            {project.budgetSource === "ai" ? "AI Estimate" : "Manually Set"}
+          </span>
+        </div>
+        {!editing && (
+          <button onClick={startEditing} className="text-[10px] text-[#FFE600] font-bold hover:underline">
+            Edit Budget
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-slate-500 text-xs">$</span>
+          <input
+            type="number"
+            min="0"
+            autoFocus
+            value={draftBudget}
+            onChange={e => setDraftBudget(e.target.value)}
+            className="bg-black border border-white/20 rounded px-2.5 py-1.5 text-xs text-white w-36"
+          />
+          <button onClick={saveBudget} className="px-3 py-1.5 bg-[#FFE600] text-black text-xs font-bold rounded">Save</button>
+          <button onClick={() => setEditing(false)} className="px-3 py-1.5 bg-black border border-white/20 text-slate-300 text-xs rounded">Cancel</button>
+        </div>
+      ) : (
+        <>
+          <div className="font-mono text-2xl font-black text-white">
+            ${spent.toLocaleString()} <span className="text-slate-600 text-base font-normal">/ ${budget.toLocaleString()}</span>
+          </div>
+          <ProgressBar value={pctUsed} />
+          <div className="flex justify-between text-[10px] text-slate-500">
+            <span className={overBudget ? "text-red-400 font-bold" : ""}>{pctUsed}% utilized{overBudget ? " — over budget" : ""}</span>
+            <span>${Math.max(budget - spent, 0).toLocaleString()} remaining</span>
+          </div>
+          {project.budgetReasoning && (
+            <p className="text-[10px] text-slate-500 italic pt-1 border-t border-white/5">
+              AI reasoning: {project.budgetReasoning}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Project Detail Page (SVGs, Analytics, and AI Risks) ────────────────────
 function ProjectDetail({
   project,
@@ -2843,13 +2939,14 @@ Requirements: ${aiInput}`;
         ? project.team.map(m => `${m.name} (${m.role})`).join(", ")
         : employees.slice(0, 6).map(m => `${m.name} (${m.role})`).join(", ");
 
-      // ── Call 1: Epics, Stories, Sprints, Tasks, Risks ──
+      // ── Call 1: Epics, Stories, Sprints, Tasks, Risks, Budget Estimate ──
       const structurePrompt = `${projectContext}
 Available team members: ${teamRoster}
 
 Generate a project structure with 3-4 epics, 6-8 user stories, 3 sprints, 2-3 tasks per story, and 3-4 risks.
 For Risks, assign encounteredWeek from 1 to 4.
 For stories and tasks, assign a team member from the available list based on their role and the work required.
+Also estimate a total project budget in USD based on the scope, complexity, and duration implied by the requirements — consider team size, project type, and effort. Give a brief one-sentence reasoning for the figure.
 
 Return ONLY this JSON (no markdown, no extra text):
 {
@@ -2857,7 +2954,9 @@ Return ONLY this JSON (no markdown, no extra text):
   "stories": [{ "title": "string", "description": "As a... I want to... So that...", "points": 5, "priority": "High", "moscow": "Must Have", "epicName": "string", "sprintName": "Sprint 1", "assignee": "Name from team roster" }],
   "sprints": [{ "name": "Sprint 1", "goal": "string", "startDate": "2026-06-01", "endDate": "2026-06-14" }],
   "tasks": [{ "storyTitle": "string", "name": "string", "priority": "High", "due": "2026-06-05", "description": "string", "assignee": "Name from team roster" }],
-  "risks": [{ "title": "string", "severity": "High", "impact": "string", "probability": 70, "category": "Technical", "mitigationPlan": "string", "encounteredWeek": 2 }]
+  "risks": [{ "title": "string", "severity": "High", "impact": "string", "probability": 70, "category": "Technical", "mitigationPlan": "string", "encounteredWeek": 2 }],
+  "estimatedBudget": 150000,
+  "budgetReasoning": "string"
 }`;
 
       const [result] = await Promise.all([
@@ -2958,20 +3057,33 @@ Return ONLY this JSON (no markdown, no extra text):
 
         setProjects(prev => prev.map(p => {
           if (p.id === project.id) {
+            const aiBudget = Number(mergedResult.estimatedBudget) || null;
+            // Don't clobber a budget the PM already set by hand — only apply
+            // the AI's figure if there's no budget yet or the existing one
+            // also came from the AI (e.g. re-running the generator).
+            const keepManualBudget = p.budgetSource === "manual" && p.budget != null;
             return {
               ...p,
               weeklyLogs: [],
               progress: 0,
               elapsed: 0,
-              spent: 0
+              spent: 0,
+              ...(keepManualBudget ? {} : {
+                budget: aiBudget,
+                budgetSource: aiBudget != null ? "ai" : p.budgetSource,
+                budgetReasoning: mergedResult.budgetReasoning || "",
+              }),
             };
           }
           return p;
         }));
 
-        addNotification(`AI successfully generated full project setup for ${project.name}.`, "system");
+        const budgetNote = (mergedResult.estimatedBudget && !(project.budgetSource === "manual" && project.budget != null))
+          ? ` AI estimated a budget of $${Number(mergedResult.estimatedBudget).toLocaleString()}.`
+          : "";
+        addNotification(`AI successfully generated full project setup for ${project.name}.${budgetNote}`, "system");
         setSelectedWeek(1);
-        alert("Project setup successfully generated!");
+        alert("Project setup successfully generated!" + budgetNote);
       }
     } catch (e) {
       alert("AI generation failed: " + e.message);
@@ -3091,11 +3203,16 @@ Return ONLY this JSON:
           };
           const updatedLogs = [...(p.weeklyLogs || []), newLog];
 
-          // Budget burn: proportional to points done + 5% overrun per delay day
-          const totalPts = (newLog.donePoints + newLog.remainingPoints) || 1;
-          const baseSpend = Math.round(p.budget * (newLog.donePoints / totalPts));
-          const delayOverrun = Math.round(p.budget * 0.005 * (newLog.delayDays || 0));
-          const newSpent = Math.min(baseSpend + delayOverrun, Math.round(p.budget * 1.15)); // cap at 15% over budget
+          // Budget burn: proportional to points done + 5% overrun per delay day.
+          // If no budget has been set yet (AI estimate missing and nothing entered
+          // manually), leave spent at 0 rather than computing against a null budget.
+          let newSpent = p.spent || 0;
+          if (p.budget != null) {
+            const totalPts = (newLog.donePoints + newLog.remainingPoints) || 1;
+            const baseSpend = Math.round(p.budget * (newLog.donePoints / totalPts));
+            const delayOverrun = Math.round(p.budget * 0.005 * (newLog.delayDays || 0));
+            newSpent = Math.min(baseSpend + delayOverrun, Math.round(p.budget * 1.15)); // cap at 15% over budget
+          }
 
           return {
             ...p,
@@ -3422,6 +3539,19 @@ Return ONLY this JSON:
               <div className="font-mono text-3xl font-black text-white">{projectEpics.length}</div>
             </div>
           </div>
+
+          {/* Budget — only shown once a budget exists (AI estimate from a requirements
+              doc, or set manually). Stays hidden before that so nothing fabricated shows. */}
+          {project.budget != null ? (
+            <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} />
+          ) : (
+            <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 border-dashed text-center space-y-2">
+              <span className="text-slate-500 text-xs font-bold uppercase block">Budget</span>
+              <p className="text-slate-400 text-xs max-w-md mx-auto">
+                No budget set yet. Go to <strong className="text-[#FFE600]">AI Setup</strong> and provide the client’s requirements document — the AI will propose a budget based on scope and complexity, which you can then accept or edit manually.
+              </p>
+            </div>
+          )}
 
           {hasWeeklyData && simulatedWeekCount > 0 && (() => {
             const weekRisks = projectRisks.filter(r => r.encounteredWeek === selectedWeek);
