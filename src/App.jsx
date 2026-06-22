@@ -3874,7 +3874,8 @@ Return ONLY this JSON:
                               <div className="text-[9px] text-slate-600 uppercase">In Progress</div>
                             </div>
                             <div>
-                              <div className={`font-mono font-bold text-lg ${info.backlog.length > 2 ? "text-amber-400" : "text-slate-400"}`}>{info.backlog.length}</div>
+                              {/* Backlog count only turns amber once work has started — before that everything being in backlog is expected */}
+                              <div className={`font-mono font-bold text-lg ${simulatedWeeks.length > 0 && info.backlog.length > 2 ? "text-amber-400" : "text-slate-400"}`}>{info.backlog.length}</div>
                               <div className="text-[9px] text-slate-600 uppercase">Backlog</div>
                             </div>
                             {info.blocked.length > 0 && (
@@ -3894,41 +3895,52 @@ Return ONLY this JSON:
                           </div>
                         </div>
 
-                        {/* Story breakdown */}
+                        {/* Story breakdown — only meaningful once simulation has started */}
                         {info.all.length > 0 && (
                           <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
-                            {/* Progress bar */}
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 bg-white/5 rounded-full h-1.5 overflow-hidden">
-                                <div className="h-1.5 bg-[#FFE600] rounded-full" style={{ width: `${totalPts > 0 ? Math.round((donePts / totalPts) * 100) : 0}%` }} />
+                            {simulatedWeeks.length === 0 ? (
+                              // Pre-simulation: just show assigned story count, no alarms
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-slate-500">{info.all.length} stor{info.all.length !== 1 ? "ies" : "y"} assigned · ready to start</span>
+                                <span className="text-slate-600 font-mono">{totalPts} pts total</span>
                               </div>
-                              <span className="text-[10px] text-slate-500 font-mono">{donePts}/{totalPts} pts</span>
-                            </div>
-
-                            {info.inProgress.length > 0 && (
-                              <div>
-                                <div className="text-[10px] text-blue-400 font-bold uppercase mb-1">In Progress</div>
-                                {info.inProgress.map((st, j) => (
-                                  <div key={j} className="text-[11px] text-slate-300 flex justify-between py-0.5">
-                                    <span>→ {st.title}</span>
-                                    <span className="text-slate-600 font-mono">{st.points}pt</span>
+                            ) : (
+                              <>
+                                {/* Progress bar */}
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 bg-white/5 rounded-full h-1.5 overflow-hidden">
+                                    <div className="h-1.5 bg-[#FFE600] rounded-full" style={{ width: `${totalPts > 0 ? Math.round((donePts / totalPts) * 100) : 0}%` }} />
                                   </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {info.backlog.length > 0 && (
-                              <div>
-                                <div className={`text-[10px] font-bold uppercase mb-1 ${info.backlog.length > 2 ? "text-amber-400" : "text-slate-500"}`}>
-                                  Pending Backlog {info.backlog.length > 2 ? "⚠ Holding up delivery" : ""}
+                                  <span className="text-[10px] text-slate-500 font-mono">{donePts}/{totalPts} pts</span>
                                 </div>
-                                {info.backlog.map((st, j) => (
-                                  <div key={j} className="text-[11px] text-slate-400 flex justify-between py-0.5">
-                                    <span>· {st.title}</span>
-                                    <span className="text-slate-600 font-mono">{st.points}pt</span>
+
+                                {info.inProgress.length > 0 && (
+                                  <div>
+                                    <div className="text-[10px] text-blue-400 font-bold uppercase mb-1">In Progress</div>
+                                    {info.inProgress.map((st, j) => (
+                                      <div key={j} className="text-[11px] text-slate-300 flex justify-between py-0.5">
+                                        <span>→ {st.title}</span>
+                                        <span className="text-slate-600 font-mono">{st.points}pt</span>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
+                                )}
+
+                                {/* Backlog only flagged as a problem once simulation is running */}
+                                {info.backlog.length > 0 && (
+                                  <div>
+                                    <div className={`text-[10px] font-bold uppercase mb-1 ${info.backlog.length > 2 ? "text-amber-400" : "text-slate-500"}`}>
+                                      Pending Backlog {info.backlog.length > 2 ? "⚠ Holding up delivery" : ""}
+                                    </div>
+                                    {info.backlog.map((st, j) => (
+                                      <div key={j} className="text-[11px] text-slate-400 flex justify-between py-0.5">
+                                        <span>· {st.title}</span>
+                                        <span className="text-slate-600 font-mono">{st.points}pt</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
                             )}
 
                             {info.blocked.length > 0 && (
@@ -4025,8 +4037,8 @@ Return ONLY this JSON:
                                 </div>
                               )}
                               {info.backlog.length > 0 && (
-                                <div className={`text-[10px] ${info.backlog.length > 1 ? "text-amber-400" : "text-slate-500"} mt-1`}>
-                                  {info.backlog.length} pending backlog item{info.backlog.length !== 1 ? "s" : ""}{info.backlog.length > 1 ? " — may slow delivery" : ""}
+                                <div className={`text-[10px] ${simulatedWeeks.length > 1 && info.backlog.length > 1 ? "text-amber-400" : "text-slate-500"} mt-1`}>
+                                  {info.backlog.length} backlog item{info.backlog.length !== 1 ? "s" : ""} remaining{simulatedWeeks.length > 1 && info.backlog.length > 1 ? " — may slow delivery" : ""}
                                 </div>
                               )}
                             </div>
