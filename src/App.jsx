@@ -873,6 +873,8 @@ export default function App() {
                   risks={risks}
                   setRisks={setRisks}
                   employees={employees}
+                  onAddMemberToProject={handleAddMemberToProject}
+                  onDropMemberFromProject={handleDropMemberFromProject}
                   onBack={() => setTab("dashboard")}
                   onDeleteProject={handleDeleteProject}
                   addNotification={addNotification}
@@ -3031,6 +3033,8 @@ function ProjectDetail({
   risks,
   setRisks,
   employees,
+  onAddMemberToProject,
+  onDropMemberFromProject,
   onBack,
   onDeleteProject,
   addNotification
@@ -3044,6 +3048,8 @@ function ProjectDetail({
   const [docFileName, setDocFileName] = useState("");
   const [docError, setDocError] = useState("");
   const docFileInputRef = useRef(null);
+  const [aiTeamSuggestions, setAiTeamSuggestions] = useState(null); // {members: [{name, role, reason}]}
+  const [teamWeekView, setTeamWeekView] = useState(1); // which week to show in Team tab
 
   const projectStories = stories.filter(s => s.projectId === project.id);
   const projectRisks = risks.filter(r => r.projectId === project.id);
@@ -3148,14 +3154,16 @@ Requirements: ${aiInput}`;
         ? project.team.map(m => `${m.name} (${m.role})`).join(", ")
         : employees.slice(0, 6).map(m => `${m.name} (${m.role})`).join(", ");
 
-      // ── Call 1: Epics, Stories, Sprints, Tasks, Risks, Budget Estimate ──
+      // ── Call 1: Epics, Stories, Sprints, Tasks, Risks, Budget Estimate, Team ──
       const structurePrompt = `${projectContext}
 Available team members: ${teamRoster}
+Client importance (stars): ${project.clientStars || 3}/5
 
 Generate a project structure with 3-4 epics, 6-8 user stories, 3 sprints, 2-3 tasks per story, and 3-4 risks.
 For Risks, assign encounteredWeek from 1 to 4.
 For stories and tasks, assign a team member from the available list based on their role and the work required.
 Also estimate a total project budget in USD based on the scope, complexity, and duration implied by the requirements — consider team size, project type, and effort. Give a brief one-sentence reasoning for the figure.
+Also suggest the ideal team composition for this project from the available roster — pick 3-5 people whose roles and specialties best match the project needs. For high client importance (4-5 stars), bias toward senior members (higher skillStars). Give a one-sentence reason per person.
 
 Return ONLY this JSON (no markdown, no extra text):
 {
@@ -3165,7 +3173,8 @@ Return ONLY this JSON (no markdown, no extra text):
   "tasks": [{ "storyTitle": "string", "name": "string", "priority": "High", "due": "2026-06-05", "description": "string", "assignee": "Name from team roster" }],
   "risks": [{ "title": "string", "severity": "High", "impact": "string", "probability": 70, "category": "Technical", "mitigationPlan": "string", "encounteredWeek": 2 }],
   "estimatedBudget": 150000,
-  "budgetReasoning": "string"
+  "budgetReasoning": "string",
+  "suggestedTeam": [{ "name": "string (exact name from roster)", "role": "string", "reason": "string" }]
 }`;
 
       const [result] = await Promise.all([
@@ -3290,9 +3299,16 @@ Return ONLY this JSON (no markdown, no extra text):
         const budgetNote = (mergedResult.estimatedBudget && !(project.budgetSource === "manual" && project.budget != null))
           ? ` AI estimated a budget of $${Number(mergedResult.estimatedBudget).toLocaleString()}.`
           : "";
+
+        // Store AI team suggestions for display in Team tab
+        if (Array.isArray(mergedResult.suggestedTeam) && mergedResult.suggestedTeam.length > 0) {
+          setAiTeamSuggestions(mergedResult.suggestedTeam);
+        }
+
         addNotification(`AI successfully generated full project setup for ${project.name}.${budgetNote}`, "system");
         setSelectedWeek(1);
-        alert("Project setup successfully generated!" + budgetNote);
+        const teamNote = mergedResult.suggestedTeam?.length ? ` AI also suggested a team of ${mergedResult.suggestedTeam.length} members — check the Team tab.` : "";
+        alert("Project setup successfully generated!" + budgetNote + teamNote);
       }
     } catch (e) {
       alert("AI generation failed: " + e.message);
@@ -3709,8 +3725,8 @@ Return ONLY this JSON:
       )}
 
       {/* Sub sections nav */}
-      <div className="flex gap-1 bg-[#2E2E2E] p-1 rounded-xl w-fit">
-        {["overview", "analytics", "risks", "AI Setup"].map(t => (
+      <div className="flex gap-1 bg-[#2E2E2E] p-1 rounded-xl w-fit flex-wrap">
+        {["overview", "team", "analytics", "risks", "AI Setup"].map(t => (
           <button
             key={t}
             onClick={() => setSubTab(t)}
@@ -3785,6 +3801,338 @@ Return ONLY this JSON:
       )}
 
       {/* Analytics (SVG Burndown and Velocity, plus Gantt Chart) */}
+      {/* ── TEAM TAB ──────────────────────────────────────────────────────── */}
+      {subTab === "team" && (() => {
+        const currentTeam = project.team || [];
+        const notOnTeam = employees.filter(e => !currentTeam.some(m => m.name === e.name && m.role === e.role));
+        const simulatedWeeks = project.weeklyLogs || [];
+        const weekLog = simulatedWeeks.find(w => w.week === teamWeekView) || null;
+
+        // Per-member story breakdown for the selected week
+        const memberStoryMap = {};
+        (project.team || []).forEach(m => {
+          const myStories = projectStories.filter(s => s.assignee === m.name);
+          const done = myStories.filter(s => s.status === "Done");
+          const inProgress = myStories.filter(s => s.status === "In Progress");
+          const backlog = myStories.filter(s => s.status === "Backlog" || s.status === "To Do");
+          const blocked = tasks.filter(t => t.projectId === project.id && t.assignee === m.name && t.status === "Blocked");
+          memberStoryMap[m.name] = { done, inProgress, backlog, blocked, all: myStories };
+        });
+
+        return (
+          <div className="space-y-5">
+
+            {/* Current Team */}
+            <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-white text-xs font-bold uppercase tracking-widest">Current Team ({currentTeam.length})</h4>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                  project.compatibilityScore >= 75 ? "bg-emerald-900/40 text-emerald-400" :
+                  project.compatibilityScore >= 55 ? "bg-amber-900/40 text-amber-400" :
+                  "bg-red-900/40 text-red-400"
+                }`}>
+                  Compatibility {project.compatibilityScore ?? "—"}%
+                </span>
+              </div>
+
+              {currentTeam.length === 0 ? (
+                <p className="text-slate-500 text-xs">No team members yet. Add from the roster below or run AI Setup to get AI suggestions.</p>
+              ) : (
+                <div className="grid gap-3">
+                  {currentTeam.map((m, i) => {
+                    const info = memberStoryMap[m.name] || { done: [], inProgress: [], backlog: [], blocked: [], all: [] };
+                    const totalPts = info.all.reduce((s, st) => s + (st.points || 0), 0);
+                    const donePts = info.done.reduce((s, st) => s + (st.points || 0), 0);
+                    return (
+                      <div key={i} className="bg-black/40 border border-white/5 rounded-xl p-4">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 ${
+                              m.role === "PM" ? "bg-[#FFE600]/20 text-[#FFE600] border border-[#FFE600]/30" :
+                              m.role === "BA" ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" :
+                              "bg-white/10 text-white border border-white/10"
+                            }`}>
+                              {m.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                            </div>
+                            <div>
+                              <div className="text-white font-semibold text-sm">{m.name}</div>
+                              <div className="text-slate-500 text-[10px]">{m.role} · {m.specialty || "—"}</div>
+                              <div className="flex gap-0.5 mt-0.5">
+                                {Array.from({ length: 5 }, (_, si) => (
+                                  <span key={si} className={`text-[10px] ${si < (m.skillStars || 0) ? "text-[#FFE600]" : "text-slate-700"}`}>★</span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 text-center flex-wrap">
+                            <div>
+                              <div className="text-emerald-400 font-mono font-bold text-lg">{info.done.length}</div>
+                              <div className="text-[9px] text-slate-600 uppercase">Done</div>
+                            </div>
+                            <div>
+                              <div className="text-blue-400 font-mono font-bold text-lg">{info.inProgress.length}</div>
+                              <div className="text-[9px] text-slate-600 uppercase">In Progress</div>
+                            </div>
+                            <div>
+                              <div className={`font-mono font-bold text-lg ${info.backlog.length > 2 ? "text-amber-400" : "text-slate-400"}`}>{info.backlog.length}</div>
+                              <div className="text-[9px] text-slate-600 uppercase">Backlog</div>
+                            </div>
+                            {info.blocked.length > 0 && (
+                              <div>
+                                <div className="text-red-400 font-mono font-bold text-lg">{info.blocked.length}</div>
+                                <div className="text-[9px] text-slate-600 uppercase">Blocked</div>
+                              </div>
+                            )}
+                            {m.role !== "PM" && (
+                              <button
+                                onClick={() => onDropMemberFromProject(m, project.id)}
+                                className="text-[10px] text-red-400 border border-red-900/30 hover:border-red-400 px-2 py-1 rounded transition-all"
+                              >
+                                Drop
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Story breakdown */}
+                        {info.all.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-white/5 space-y-2">
+                            {/* Progress bar */}
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-white/5 rounded-full h-1.5 overflow-hidden">
+                                <div className="h-1.5 bg-[#FFE600] rounded-full" style={{ width: `${totalPts > 0 ? Math.round((donePts / totalPts) * 100) : 0}%` }} />
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-mono">{donePts}/{totalPts} pts</span>
+                            </div>
+
+                            {info.inProgress.length > 0 && (
+                              <div>
+                                <div className="text-[10px] text-blue-400 font-bold uppercase mb-1">In Progress</div>
+                                {info.inProgress.map((st, j) => (
+                                  <div key={j} className="text-[11px] text-slate-300 flex justify-between py-0.5">
+                                    <span>→ {st.title}</span>
+                                    <span className="text-slate-600 font-mono">{st.points}pt</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {info.backlog.length > 0 && (
+                              <div>
+                                <div className={`text-[10px] font-bold uppercase mb-1 ${info.backlog.length > 2 ? "text-amber-400" : "text-slate-500"}`}>
+                                  Pending Backlog {info.backlog.length > 2 ? "⚠ Holding up delivery" : ""}
+                                </div>
+                                {info.backlog.map((st, j) => (
+                                  <div key={j} className="text-[11px] text-slate-400 flex justify-between py-0.5">
+                                    <span>· {st.title}</span>
+                                    <span className="text-slate-600 font-mono">{st.points}pt</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {info.blocked.length > 0 && (
+                              <div>
+                                <div className="text-[10px] text-red-400 font-bold uppercase mb-1">Blocked Tasks 🔴</div>
+                                {info.blocked.map((t, j) => (
+                                  <div key={j} className="text-[11px] text-red-300 py-0.5">⛔ {t.name}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Weekly Activity View */}
+            {simulatedWeeks.length > 0 && (
+              <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="text-white text-xs font-bold uppercase tracking-widest">Weekly Activity Breakdown</h4>
+                  <div className="flex gap-1">
+                    {simulatedWeeks.map(w => (
+                      <button key={w.week} onClick={() => setTeamWeekView(w.week)}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${teamWeekView === w.week ? "bg-[#FFE600] text-black" : "bg-white/5 text-slate-400 hover:text-white"}`}>
+                        W{w.week}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {weekLog ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-4 gap-3 text-center">
+                      <div className="bg-black/30 p-3 rounded-lg">
+                        <div className="font-mono font-bold text-[#FFE600] text-xl">{weekLog.velocityActual}</div>
+                        <div className="text-[9px] text-slate-600 uppercase">Pts Completed</div>
+                      </div>
+                      <div className="bg-black/30 p-3 rounded-lg">
+                        <div className="font-mono font-bold text-slate-300 text-xl">{weekLog.velocityTarget}</div>
+                        <div className="text-[9px] text-slate-600 uppercase">Pts Target</div>
+                      </div>
+                      <div className="bg-black/30 p-3 rounded-lg">
+                        <div className="font-mono font-bold text-white text-xl">{weekLog.donePoints}</div>
+                        <div className="text-[9px] text-slate-600 uppercase">Cumulative Done</div>
+                      </div>
+                      <div className="bg-black/30 p-3 rounded-lg">
+                        <div className={`font-mono font-bold text-xl ${weekLog.delayDays > 0 ? "text-red-400" : "text-emerald-400"}`}>
+                          {weekLog.delayDays > 0 ? `+${weekLog.delayDays}d` : "On track"}
+                        </div>
+                        <div className="text-[9px] text-slate-600 uppercase">Delay</div>
+                      </div>
+                    </div>
+
+                    {weekLog.weekSummary && (
+                      <p className="text-slate-400 text-xs leading-relaxed border-l-2 border-[#FFE600]/40 pl-3">
+                        {weekLog.weekSummary}
+                      </p>
+                    )}
+
+                    {/* Per-member story completions for this week */}
+                    <div>
+                      <div className="text-[10px] text-slate-500 font-bold uppercase mb-2">Who Did What — Week {teamWeekView}</div>
+                      <div className="space-y-2">
+                        {currentTeam.map((m, i) => {
+                          const info = memberStoryMap[m.name] || { done: [], inProgress: [], backlog: [] };
+                          // Stories that were moved to Done/In Progress this week per storyUpdates
+                          const weekUpdates = (weekLog.storyUpdates || []).filter(u => {
+                            const story = projectStories.find(s => s.title === u.title);
+                            return story && story.assignee === m.name;
+                          });
+                          if (weekUpdates.length === 0 && info.backlog.length === 0) return null;
+                          return (
+                            <div key={i} className="bg-black/30 rounded-lg p-3 text-xs">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-bold text-white">
+                                  {m.name.split(" ").map(n => n[0]).join("").slice(0,2)}
+                                </div>
+                                <span className="text-white font-semibold">{m.name}</span>
+                                <span className="text-slate-600">{m.role}</span>
+                              </div>
+                              {weekUpdates.length > 0 && (
+                                <div className="space-y-1 mb-1">
+                                  {weekUpdates.map((u, j) => (
+                                    <div key={j} className={`flex items-center gap-1.5 text-[11px] ${u.status === "Done" ? "text-emerald-400" : "text-blue-400"}`}>
+                                      <span>{u.status === "Done" ? "✓" : "→"}</span>
+                                      <span>{u.title}</span>
+                                      <span className={`text-[9px] px-1 rounded ${u.status === "Done" ? "bg-emerald-900/40" : "bg-blue-900/40"}`}>{u.status}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {info.backlog.length > 0 && (
+                                <div className={`text-[10px] ${info.backlog.length > 1 ? "text-amber-400" : "text-slate-500"} mt-1`}>
+                                  {info.backlog.length} pending backlog item{info.backlog.length !== 1 ? "s" : ""}{info.backlog.length > 1 ? " — may slow delivery" : ""}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }).filter(Boolean)}
+                      </div>
+                    </div>
+
+                    {weekLog.risks?.length > 0 && (
+                      <div>
+                        <div className="text-[10px] text-red-400 font-bold uppercase mb-1">Risks Surfaced This Week</div>
+                        {weekLog.risks.map((r, i) => (
+                          <div key={i} className="text-[11px] text-red-300 flex gap-2 py-0.5"><span>⚠</span>{r}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-xs">No log for Week {teamWeekView}.</p>
+                )}
+              </div>
+            )}
+
+            {/* AI Team Suggestions */}
+            {aiTeamSuggestions && aiTeamSuggestions.length > 0 && (
+              <div className="bg-[#FFE600]/5 border border-[#FFE600]/20 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="text-[#FFE600] text-xs font-bold uppercase tracking-widest">✦ AI Team Suggestion</h4>
+                  <button onClick={() => setAiTeamSuggestions(null)} className="text-[10px] text-slate-500 hover:text-white">Dismiss</button>
+                </div>
+                <p className="text-slate-400 text-[11px]">Based on the requirements document and client importance ({project.clientStars}/5★), the AI recommends:</p>
+                <div className="space-y-2">
+                  {aiTeamSuggestions.map((s, i) => {
+                    const alreadyOnTeam = currentTeam.some(m => m.name === s.name);
+                    const rosterMatch = employees.find(e => e.name === s.name);
+                    return (
+                      <div key={i} className="bg-black/40 border border-white/5 rounded-xl p-3 flex items-start justify-between gap-3 flex-wrap">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-full bg-[#FFE600]/15 flex items-center justify-center text-[10px] font-bold text-[#FFE600] flex-shrink-0">
+                            {s.name.split(" ").map(n => n[0]).join("").slice(0,2)}
+                          </div>
+                          <div>
+                            <div className="text-white font-semibold text-sm">{s.name}</div>
+                            <div className="text-slate-500 text-[10px]">{s.role}</div>
+                            <div className="text-slate-400 text-[11px] mt-0.5 italic">{s.reason}</div>
+                          </div>
+                        </div>
+                        {alreadyOnTeam ? (
+                          <span className="text-[10px] text-emerald-400 font-bold border border-emerald-900/30 px-2 py-1 rounded">Already on team</span>
+                        ) : rosterMatch ? (
+                          <button
+                            onClick={() => { onAddMemberToProject(rosterMatch, project.id); }}
+                            className="text-[10px] text-black bg-[#FFE600] font-bold px-3 py-1 rounded hover:bg-white transition-all"
+                          >
+                            + Add to Team
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-slate-600 italic">Not in roster</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Add from Roster */}
+            <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-5 space-y-3">
+              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Add from Roster</h4>
+              {notOnTeam.length === 0 ? (
+                <p className="text-slate-500 text-xs">Everyone in the roster is already on this project.</p>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                  {notOnTeam.map((emp, i) => (
+                    <div key={i} className="bg-black/30 border border-white/5 rounded-lg p-3 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-white text-xs font-semibold">{emp.name}</div>
+                        <div className="text-slate-500 text-[10px]">{emp.role} · {emp.specialty}</div>
+                        <div className="flex gap-0.5 mt-0.5">
+                          {Array.from({ length: 5 }, (_, si) => (
+                            <span key={si} className={`text-[9px] ${si < (emp.skillStars || 0) ? "text-[#FFE600]" : "text-slate-700"}`}>★</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${emp.available ? "bg-emerald-900/30 text-emerald-400" : "bg-slate-700 text-slate-500"}`}>
+                          {emp.available ? "Available" : `${emp.projects || 0} project${(emp.projects || 0) !== 1 ? "s" : ""}`}
+                        </span>
+                        <button
+                          onClick={() => onAddMemberToProject(emp, project.id)}
+                          className="text-[10px] text-[#FFE600] font-bold border border-[#FFE600]/30 hover:bg-[#FFE600] hover:text-black px-2 py-0.5 rounded transition-all"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        );
+      })()}
+
+      {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
       {subTab === "analytics" && (
         <div className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
