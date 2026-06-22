@@ -529,24 +529,42 @@ export default function App() {
 
   const currentProject = projects.find(p => p.id === activeProjectId) || projects[0] || null;
 
-  // Recalculating project progress based on completed Story Points
+  // Recalculating project progress based on Story status across all Kanban columns.
+  // Stories in Review/Testing count as partial progress — they represent real work
+  // completed, just not yet signed off. This means dragging a card to Review or
+  // Testing on the Kanban board immediately moves the Dashboard progress ring.
+  //   Done      = 100% of story points
+  //   Testing   =  80% of story points
+  //   Review    =  60% of story points
+  //   In Progress =  30% of story points
+  //   Backlog / To Do = 0%
+  const STORY_STATUS_WEIGHT = { "Done": 1.0, "Testing": 0.8, "Review": 0.6, "In Progress": 0.3 };
+
   useEffect(() => {
     if (!projects.length) return;
     const nextProjects = projects.map(p => {
       const projStories = stories.filter(s => s.projectId === p.id);
       if (projStories.length === 0) return { ...p, progress: 0 };
-      const donePoints = projStories.filter(s => s.status === "Done").reduce((sum, s) => sum + (Number(s.points) || 0), 0);
       const totalPoints = projStories.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
-      const calculatedProgress = totalPoints > 0 ? Math.round((donePoints / totalPoints) * 100) : 0;
-      if (p.progress !== calculatedProgress) {
-        return { ...p, progress: calculatedProgress };
+      const weightedPoints = projStories.reduce((sum, s) => {
+        const weight = STORY_STATUS_WEIGHT[s.status] || 0;
+        return sum + (Number(s.points) || 0) * weight;
+      }, 0);
+      const calculatedProgress = totalPoints > 0 ? Math.round((weightedPoints / totalPoints) * 100) : 0;
+
+      // Auto-update project status based on progress
+      let newStatus = p.status;
+      if (calculatedProgress >= 100) newStatus = "Completed";
+      else if (calculatedProgress > 0 && p.status === "On Track") newStatus = "In Progress";
+      else if (calculatedProgress === 0) newStatus = p.weeklyLogs?.length > 0 ? p.status : "On Track";
+
+      if (p.progress !== calculatedProgress || p.status !== newStatus) {
+        return { ...p, progress: calculatedProgress, status: newStatus };
       }
       return p;
     });
     const changed = JSON.stringify(projects) !== JSON.stringify(nextProjects);
-    if (changed) {
-      setProjects(nextProjects);
-    }
+    if (changed) setProjects(nextProjects);
   }, [stories]);
 
   // Recalculating epic progress based on completed Story Points inside the epic
@@ -1793,12 +1811,27 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                     e.currentTarget.classList.remove("border-[#FFE600]/50");
                     const storyId = Number(e.dataTransfer.getData("storyId"));
                     if (!storyId) return;
+                    const story = projectStories.find(s => s.id === storyId);
+                    if (!story) return;
                     setStories(prev => prev.map(s => s.id === storyId ? { ...s, status: col } : s));
-                    addNotification(`Moved story to ${col}.`, "system");
+                    // Progress re-calculation fires automatically via the useEffect
+                    // that watches stories — Review/Testing/Done all contribute now.
+                    const statusMsg = col === "Done" ? "✓ Marked complete — progress updated"
+                      : col === "Testing" ? "🧪 Moved to Testing (80% weight) — progress updated"
+                      : col === "Review" ? "👁 Moved to Review (60% weight) — progress updated"
+                      : col === "In Progress" ? "→ Work started (30% weight) — progress updated"
+                      : `Moved to ${col}`;
+                    addNotification(`"${story.title}" — ${statusMsg}.`, "system");
                   }}
                 >
                   <div className="flex justify-between items-center mb-3 pb-2 border-b border-white/10">
-                    <span className="text-white font-bold text-xs uppercase tracking-wider">{col}</span>
+                    <div>
+                      <span className="text-white font-bold text-xs uppercase tracking-wider">{col}</span>
+                      {col === "Review" && <span className="ml-1.5 text-[9px] text-indigo-400 font-mono">60%</span>}
+                      {col === "Testing" && <span className="ml-1.5 text-[9px] text-amber-400 font-mono">80%</span>}
+                      {col === "Done" && <span className="ml-1.5 text-[9px] text-emerald-400 font-mono">100%</span>}
+                      {col === "In Progress" && <span className="ml-1.5 text-[9px] text-blue-400 font-mono">30%</span>}
+                    </div>
                     <span className="text-[10px] font-mono text-slate-500 bg-black/45 px-2 py-0.5 rounded-full">{filteredStories.length}</span>
                   </div>
 
@@ -1819,15 +1852,26 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                             e.currentTarget.style.opacity = "0.4";
                           }}
                           onDragEnd={e => { e.currentTarget.style.opacity = "1"; }}
-                          className={`border rounded-xl p-3 space-y-2.5 hover:border-[#FFE600]/40 transition-all cursor-grab active:cursor-grabbing ${isDone ? "bg-green-950/20 border-green-800/20" : isInProgress ? "bg-yellow-950/10 border-yellow-800/15" : "bg-[#2E2E2E]/50 border-white/10"}`}
+                          className={`border rounded-xl p-3 space-y-2.5 hover:border-[#FFE600]/40 transition-all cursor-grab active:cursor-grabbing ${
+                            story.status === "Done" ? "bg-green-950/20 border-green-800/20" :
+                            story.status === "Testing" ? "bg-amber-950/20 border-amber-800/20" :
+                            story.status === "Review" ? "bg-indigo-950/20 border-indigo-800/20" :
+                            story.status === "In Progress" ? "bg-yellow-950/10 border-yellow-800/15" :
+                            "bg-[#2E2E2E]/50 border-white/10"
+                          }`}
                         >
                           {/* Title + status dot */}
                           <div className="flex justify-between items-start gap-1">
                             <span onClick={() => setStoryDetailModal(story)} className={`font-semibold text-[11px] hover:text-[#FFE600] cursor-pointer hover:underline line-clamp-2 ${isDone ? "line-through text-slate-400" : "text-white"}`}>
                               {story.title}
                             </span>
-                            <span className={`flex-shrink-0 text-xs leading-none mt-0.5 ${isDone ? "text-green-400" : isInProgress ? "text-yellow-400" : "text-slate-600"}`}>
-                              {isDone ? "✓" : isInProgress ? "◑" : "○"}
+                            <span className={`flex-shrink-0 text-xs leading-none mt-0.5 ${
+                              isDone ? "text-green-400" :
+                              story.status === "Testing" ? "text-amber-400" :
+                              story.status === "Review" ? "text-indigo-400" :
+                              isInProgress ? "text-yellow-400" : "text-slate-600"
+                            }`}>
+                              {isDone ? "✓" : story.status === "Testing" ? "🧪" : story.status === "Review" ? "👁" : isInProgress ? "◑" : "○"}
                             </span>
                           </div>
 
@@ -1861,7 +1905,12 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                             {storyTasks.length > 0 && (
                               <div className="w-full bg-black/40 rounded-full h-1">
                                 <div
-                                  className={`h-1 rounded-full transition-all ${taskProgress === 100 ? "bg-green-400" : isInProgress ? "bg-[#FFE600]" : "bg-slate-600"}`}
+                                  className={`h-1 rounded-full transition-all ${
+                                    taskProgress === 100 ? "bg-green-400" :
+                                    story.status === "Testing" ? "bg-amber-400" :
+                                    story.status === "Review" ? "bg-indigo-400" :
+                                    isInProgress ? "bg-[#FFE600]" : "bg-slate-600"
+                                  }`}
                                   style={{ width: `${taskProgress}%` }}
                                 />
                               </div>
