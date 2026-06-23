@@ -3199,20 +3199,25 @@ function ProjectDetail({
 Description: ${project.description}
 Requirements: ${aiInput}`;
 
-      const teamRoster = project.team && project.team.length > 0
-        ? project.team.map(m => `${m.name} (${m.role})`).join(", ")
-        : employees.slice(0, 6).map(m => `${m.name} (${m.role})`).join(", ");
+      // Always give AI the FULL roster — not just current team members.
+      // Using only current team caused it to hallucinate names to fill gaps.
+      const rosterNames = employees.map(m => m.name);
+      const teamRoster = employees
+        .map(m => `${m.name} (${m.role}, ${m.specialty}, ${m.skillStars}★)`)
+        .join(", ");
 
       // ── Call 1: Epics, Stories, Sprints, Tasks, Risks, Budget Estimate, Team ──
       const structurePrompt = `${projectContext}
-Available team members: ${teamRoster}
+Available team members (ONLY use names from this exact list): ${teamRoster}
 Client importance (stars): ${project.clientStars || 3}/5
+
+CRITICAL: For suggestedTeam, you MUST only use names that appear verbatim in the list above. Do not invent or modify any names.
 
 Generate a project structure with 3-4 epics, 6-8 user stories, 3 sprints, 2-3 tasks per story, and 3-4 risks.
 For Risks, assign encounteredWeek from 1 to 4.
 For stories and tasks, assign a team member from the available list based on their role and the work required.
 Also estimate a total project budget in USD based on the scope, complexity, and duration implied by the requirements — consider team size, project type, and effort. Give a brief one-sentence reasoning for the figure.
-Also suggest the ideal team composition for this project from the available roster — pick 3-5 people whose roles and specialties best match the project needs. For high client importance (4-5 stars), bias toward senior members (higher skillStars). Give a one-sentence reason per person.
+Also suggest the ideal team composition for this project — pick 3-5 people from the roster above whose roles and specialties best match the project needs. For high client importance (4-5 stars), bias toward members with higher skillStars. You MUST only suggest names that exist exactly in the roster list above.
 
 Return ONLY this JSON (no markdown, no extra text):
 {
@@ -3223,7 +3228,7 @@ Return ONLY this JSON (no markdown, no extra text):
   "risks": [{ "title": "string", "severity": "High", "impact": "string", "probability": 70, "category": "Technical", "mitigationPlan": "string", "encounteredWeek": 2 }],
   "estimatedBudget": 150000,
   "budgetReasoning": "string",
-  "suggestedTeam": [{ "name": "string (exact name from roster)", "role": "string", "reason": "string" }]
+  "suggestedTeam": [{ "name": "string (must be exact name from roster)", "role": "string", "reason": "string" }]
 }`;
 
       const [result] = await Promise.all([
@@ -3349,9 +3354,13 @@ Return ONLY this JSON (no markdown, no extra text):
           ? ` AI estimated a budget of $${Number(mergedResult.estimatedBudget).toLocaleString()}.`
           : "";
 
-        // Store AI team suggestions for display in Team tab
+        // Hard-filter suggested team against the real roster — drop any name
+        // the AI hallucinated that doesn't exist in employees exactly.
         if (Array.isArray(mergedResult.suggestedTeam) && mergedResult.suggestedTeam.length > 0) {
-          setAiTeamSuggestions(mergedResult.suggestedTeam);
+          const validSuggestions = mergedResult.suggestedTeam.filter(s =>
+            rosterNames.includes(s.name)
+          );
+          if (validSuggestions.length > 0) setAiTeamSuggestions(validSuggestions);
         }
 
         addNotification(`AI successfully generated full project setup for ${project.name}.${budgetNote}`, "system");
