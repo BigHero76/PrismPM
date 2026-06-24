@@ -2198,8 +2198,6 @@ function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories,
     }
   };
 
-  const [apiLoading, setApiLoading] = useState(false);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
       <div className="bg-[#1e1e1e] border border-white/10 rounded-2xl w-full max-w-4xl p-6 space-y-6 max-h-[90vh] overflow-y-auto shadow-2xl relative">
