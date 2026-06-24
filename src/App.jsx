@@ -538,7 +538,7 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem("prismpm.overrideLog", JSON.stringify(aiOverrideLog)); } catch {} }, [aiOverrideLog]);
 
-  const logOverride = (entity, field, oldVal, newVal, source = "manual") => {
+  const logOverride = (entity, field, oldVal, newVal, source = "manual", projectId = null) => {
     setAiOverrideLog(prev => [{
       id: Date.now(),
       timestamp: new Date().toISOString(),
@@ -546,7 +546,8 @@ export default function App() {
       field,
       oldVal: String(oldVal),
       newVal: String(newVal),
-      source
+      source,
+      projectId
     }, ...prev.slice(0, 99)]);
   };
 
@@ -837,7 +838,7 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
                   {tab === "dashboard" ? "Project Portfolio" 
                     : tab === "team" ? "Team Directory" 
                     : tab === "brd" ? "AI BRD Generator" 
-                    : tab === "agile" ? `Agile Scrum Board: ${currentProject?.name || "Choose Project"}` 
+                    : tab === "agile" ? `Agile Scrum Board: ${projects.find(p => p.id === activeProjectId)?.name || "Choose Project"}` 
                     : selectedProject?.name || "Project"}
                 </h1>
                 <p className="text-[11px] text-slate-400 mt-0.5">
@@ -1286,23 +1287,30 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
     setApiLoading(true);
     try {
       const result = await callGroq(
-        `Based on this project description: "${proj.name} - ${proj.description}", generate 4 user stories.
+        `Based on this project description: "${proj.name} - ${proj.description}", generate 6 user stories covering the main functional areas.
         Return JSON with exactly this key format:
         { "stories": [ { "title": "User Story Title", "description": "Story details", "priority": "High/Medium/Low", "points": 1/2/3/5/8/13, "epicName": "Core Module" } ] }`,
-        "", "", 1500
+        "You are an expert agile project manager AI. Always respond with valid JSON only.", "", 2000
       );
       if (result && Array.isArray(result.stories)) {
-        let createdCount = 0;
+        // Batch ALL epic and story creates into single state updates to avoid
+        // stale-closure issues where each setStories call in a forEach loop
+        // overwrites the previous one, leaving only the last story.
+        const newEpics = [];
+        const newStories = [];
+        const existingEpicsCopy = [...epics];
+
         result.stories.forEach(storyData => {
-          let epic = epics.find(e => e.projectId === projectId && e.name.toLowerCase() === storyData.epicName.toLowerCase());
+          let epic = [...existingEpicsCopy, ...newEpics].find(
+            e => e.projectId === projectId && e.name.toLowerCase() === (storyData.epicName || "").toLowerCase()
+          );
           let epicId = epic ? epic.id : null;
           if (!epicId) {
             epicId = Date.now() + Math.random();
-            const newEpObj = { id: epicId, projectId, name: storyData.epicName, description: "AI Auto Generated Epic", status: "To Do", progress: 0 };
-            setEpics(prev => [...prev, newEpObj]);
+            const newEpObj = { id: epicId, projectId, name: storyData.epicName || "General", description: "AI Generated Epic", status: "To Do", progress: 0 };
+            newEpics.push(newEpObj);
           }
-
-          const storyObj = {
+          newStories.push({
             id: Date.now() + Math.random(),
             projectId,
             epicId,
@@ -1315,11 +1323,13 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
             sprintId: null,
             moscow: "Should Have",
             score: 50
-          };
-          setStories(prev => [...prev, storyObj]);
-          createdCount++;
+          });
         });
-        addNotification(`AI generated ${createdCount} user stories and associated epics successfully.`, "system");
+
+        // Single batched state update — no stale closures
+        if (newEpics.length > 0) setEpics(prev => [...prev, ...newEpics]);
+        if (newStories.length > 0) setStories(prev => [...prev, ...newStories]);
+        addNotification(`AI generated ${newStories.length} user stories across ${newEpics.length} new epics.`, "system");
       }
     } catch (e) {
       alert("AI Generation failed: " + e.message);
@@ -3225,9 +3235,16 @@ function ProjectDetail({
   onBack,
   onDeleteProject,
   addNotification,
-  logOverride = () => {},
-  aiOverrideLog = []
+  logOverride: logOverrideGlobal = () => {},
+  aiOverrideLog: aiOverrideLogAll = []
 }) {
+  // Wrap logOverride so every entry from this project is tagged with its id
+  const logOverride = (entity, field, oldVal, newVal, source = "manual") =>
+    logOverrideGlobal(entity, field, oldVal, newVal, source, project.id);
+
+  // Only show entries belonging to this project (legacy entries without projectId are hidden)
+  const aiOverrideLog = aiOverrideLogAll.filter(e => e.projectId === project.id);
+
   const [subTab, setSubTab] = useState("overview");
   const [apiLoading, setApiLoading] = useState(false);
   const [riskFilter, setRiskFilter] = useState(null);
@@ -3599,7 +3616,7 @@ Return ONLY this JSON:
 
       if (result && result.week) {
         // Show review modal instead of immediately applying
-        setPendingSimResult({ ...result, nextWeek, prevDone, prevRemaining, totalPts });
+        setPendingSimResult({ ...result, nextWeek, prevDone, prevRemaining, totalPts, projectId: project.id });
         setShowSimReview(true);
       } else {
         alert("AI returned an unexpected response. Please try again.");
@@ -4740,7 +4757,7 @@ Return ONLY this JSON:
         <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-6 space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-white text-xs font-bold uppercase tracking-widest">Manual Override Audit Log</h4>
-            <span className="text-[10px] text-slate-500">{aiOverrideLog.filter(l => l.entity.includes(project.name) || true).length} entries</span>
+            <span className="text-[10px] text-slate-500">{aiOverrideLog.length} entries</span>
           </div>
           {aiOverrideLog.length === 0 ? (
             <p className="text-slate-500 text-xs text-center py-8">No manual overrides recorded yet. Any edits to AI-generated values will appear here.</p>
@@ -4887,7 +4904,7 @@ Return ONLY this JSON:
                   <div key={key} className="bg-black/40 border border-white/10 rounded-xl p-3">
                     <label className="text-[9px] text-slate-500 uppercase block mb-1">{label}</label>
                     <input type="number" value={pendingSimResult[key]}
-                      onChange={e => { const old = pendingSimResult[key]; const val = Number(e.target.value); logOverride(`Week ${pendingSimResult.week} Simulation`, key, old, val, "human-review"); setPendingSimResult(p => ({ ...p, [key]: val })); }}
+                      onChange={e => { const old = pendingSimResult[key]; const val = Number(e.target.value); logOverride(`Week ${pendingSimResult.week} Simulation`, key, old, val, "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, [key]: val })); }}
                       className="w-full bg-transparent text-white font-mono text-lg font-bold focus:outline-none border-b border-white/10 focus:border-[#FFE600]"
                     />
                   </div>
@@ -4898,7 +4915,7 @@ Return ONLY this JSON:
                   <div key={key} className="bg-black/40 border border-white/10 rounded-xl p-3">
                     <label className="text-[9px] text-slate-500 uppercase block mb-1">{label}</label>
                     <input type="number" value={pendingSimResult[key]}
-                      onChange={e => { logOverride(`Week ${pendingSimResult.week}`, key, pendingSimResult[key], Number(e.target.value), "human-review"); setPendingSimResult(p => ({ ...p, [key]: Number(e.target.value) })); }}
+                      onChange={e => { logOverride(`Week ${pendingSimResult.week}`, key, pendingSimResult[key], Number(e.target.value), "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, [key]: Number(e.target.value) })); }}
                       className="w-full bg-transparent text-white font-mono text-lg font-bold focus:outline-none border-b border-white/10 focus:border-[#FFE600]"
                     />
                   </div>
@@ -4907,7 +4924,7 @@ Return ONLY this JSON:
               <div className="space-y-1">
                 <label className="text-[9px] text-slate-500 uppercase">Week Summary</label>
                 <textarea value={pendingSimResult.weekSummary}
-                  onChange={e => { logOverride(`Week ${pendingSimResult.week}`, "weekSummary", pendingSimResult.weekSummary, e.target.value, "human-review"); setPendingSimResult(p => ({ ...p, weekSummary: e.target.value })); }}
+                  onChange={e => { logOverride(`Week ${pendingSimResult.week}`, "weekSummary", pendingSimResult.weekSummary, e.target.value, "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, weekSummary: e.target.value })); }}
                   rows={3} className="w-full bg-black border border-white/15 rounded-xl px-3 py-2 text-xs text-white resize-none focus:outline-none focus:border-[#FFE600]"
                 />
               </div>
@@ -4919,7 +4936,7 @@ Return ONLY this JSON:
                       <div key={i} className="flex justify-between items-center bg-black/30 border border-white/5 rounded-lg px-3 py-2">
                         <span className="text-xs text-white truncate flex-1 mr-2">{su.title}</span>
                         <select value={su.status}
-                          onChange={e => { const ns = e.target.value; logOverride(`Story: ${su.title}`, "status", su.status, ns, "human-review"); setPendingSimResult(p => ({ ...p, storyUpdates: p.storyUpdates.map((s, j) => j === i ? { ...s, status: ns } : s) })); }}
+                          onChange={e => { const ns = e.target.value; logOverride(`Story: ${su.title}`, "status", su.status, ns, "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, storyUpdates: p.storyUpdates.map((s, j) => j === i ? { ...s, status: ns } : s) })); }}
                           className="bg-[#2E2E2E] border border-white/10 text-white text-[10px] rounded px-2 py-1">
                           <option>Backlog</option><option>To Do</option><option>In Progress</option><option>Review</option><option>Done</option>
                         </select>
