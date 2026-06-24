@@ -457,6 +457,9 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const handleLogin = () => {
+    // Wipe the audit log on every fresh login so each session starts clean
+    try { localStorage.removeItem("prismpm.overrideLog"); } catch {}
+    setAiOverrideLog([]);
     setIsLoggedIn(true);
   };
 
@@ -942,9 +945,6 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
                   employees={employees}
                   addNotification={addNotification}
                   setStoryDetailModal={setStoryDetailModal}
-                  logOverride={(entity, field, oldVal, newVal, source) =>
-                    logOverride(entity, field, oldVal, newVal, source, activeProjectId)
-                  }
                 />
               )}
               {tab === "project" && selectedProject && (
@@ -970,6 +970,7 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
                   addNotification={addNotification}
                   logOverride={logOverride}
                   aiOverrideLog={aiOverrideLog}
+                  setAiOverrideLog={setAiOverrideLog}
                 />
               )}
             </div>
@@ -1238,7 +1239,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
 }
 
 // ─── Agile Board Tab ────────────────────────────────────────────────────────
-function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal, logOverride = () => {} }) {
+function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal }) {
   const [subTab, setSubTab] = useState("backlog");
   const [apiLoading, setApiLoading] = useState(false);
   const projectStories = stories.filter(s => s.projectId === projectId);
@@ -1965,7 +1966,6 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                     if (!storyId) return;
                     const story = projectStories.find(s => s.id === storyId);
                     if (!story) return;
-                    logOverride(`Story: ${story.title}`, "status", story.status, col, "manual");
                     setStories(prev => prev.map(s => s.id === storyId ? { ...s, status: col } : s));
                     // Progress re-calculation fires automatically via the useEffect
                     // that watches stories — Review/Testing/Done all contribute now.
@@ -3144,7 +3144,7 @@ BUDGET REASONING: ${brd.budgetReasoning || "N/A"}
 }
 
 // ─── Budget Panel (AI-estimated, manually editable) ──────────────────────────
-function BudgetPanel({ project, setProjects, addNotification, logOverride = () => {} }) {
+function BudgetPanel({ project, setProjects, addNotification }) {
   const [editing, setEditing] = useState(false);
   const [draftBudget, setDraftBudget] = useState(project.budget ?? 0);
 
@@ -3161,7 +3161,6 @@ function BudgetPanel({ project, setProjects, addNotification, logOverride = () =
   const saveBudget = () => {
     const value = Number(draftBudget);
     if (!Number.isFinite(value) || value < 0) return;
-    logOverride(`Project: ${project.name}`, "budget", project.budget ?? 0, value, "manual");
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, budget: value, budgetSource: "manual" } : p));
     addNotification(`Budget for "${project.name}" manually set to $${value.toLocaleString()}.`, "system");
     setEditing(false);
@@ -3239,9 +3238,17 @@ function ProjectDetail({
   onBack,
   onDeleteProject,
   addNotification,
-  logOverride = () => {},
-  aiOverrideLog = []
+  logOverride: logOverrideGlobal = () => {},
+  aiOverrideLog: aiOverrideLogAll = [],
+  setAiOverrideLog = () => {}
 }) {
+  // Wrap logOverride so every entry from this project is tagged with its id
+  const logOverride = (entity, field, oldVal, newVal, source = "manual") =>
+    logOverrideGlobal(entity, field, oldVal, newVal, source, project.id);
+
+  // Only show entries belonging to this project
+  const aiOverrideLog = aiOverrideLogAll.filter(e => e.projectId === project.id);
+
   const [subTab, setSubTab] = useState("overview");
   const [apiLoading, setApiLoading] = useState(false);
   const [riskFilter, setRiskFilter] = useState(null);
@@ -3258,6 +3265,9 @@ function ProjectDetail({
   const [showSimReview, setShowSimReview] = useState(false);
   const [aiTeamSuggestions, setAiTeamSuggestions] = useState(null);
   const [teamWeekView, setTeamWeekView] = useState(1); // which week to show in Team tab
+  const [showClearAudit, setShowClearAudit] = useState(false);
+  const [clearAuditPassword, setClearAuditPassword] = useState("");
+  const [clearAuditError, setClearAuditError] = useState("");
 
   const projectStories = stories.filter(s => s.projectId === project.id);
   const projectRisks = risks.filter(r => r.projectId === project.id);
@@ -4009,7 +4019,7 @@ Return ONLY this JSON:
           {/* Budget — only shown once a budget exists (AI estimate from a requirements
               doc, or set manually). Stays hidden before that so nothing fabricated shows. */}
           {project.budget != null ? (
-            <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} logOverride={logOverride} />
+            <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} />
           ) : (
             <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 border-dashed text-center space-y-2">
               <span className="text-slate-500 text-xs font-bold uppercase block">Budget</span>
@@ -4754,8 +4764,72 @@ Return ONLY this JSON:
         <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-6 space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-white text-xs font-bold uppercase tracking-widest">Manual Override Audit Log</h4>
-            <span className="text-[10px] text-slate-500">{aiOverrideLog.filter(l => l.entity.includes(project.name) || true).length} entries</span>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] text-slate-500">{aiOverrideLog.length} entries</span>
+              {aiOverrideLog.length > 0 && !showClearAudit && (
+                <button
+                  onClick={() => { setShowClearAudit(true); setClearAuditPassword(""); setClearAuditError(""); }}
+                  className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all"
+                >
+                  🗑 Clear Log
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Password-gated clear confirmation */}
+          {showClearAudit && (
+            <div className="bg-red-950/20 border border-red-800/30 rounded-xl p-4 space-y-3">
+              <p className="text-red-400 text-xs font-bold">Enter password to permanently clear all audit entries for this project:</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={clearAuditPassword}
+                  onChange={e => { setClearAuditPassword(e.target.value); setClearAuditError(""); }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      if (clearAuditPassword === "password") {
+                        setAiOverrideLog(prev => prev.filter(e => e.projectId !== project.id));
+                        setShowClearAudit(false);
+                        setClearAuditPassword("");
+                        setClearAuditError("");
+                      } else {
+                        setClearAuditError("Incorrect password.");
+                      }
+                    }
+                  }}
+                  placeholder="Enter password..."
+                  className="bg-black border border-red-800/40 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 w-48"
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    if (clearAuditPassword === "password") {
+                      setAiOverrideLog(prev => prev.filter(e => e.projectId !== project.id));
+                      setShowClearAudit(false);
+                      setClearAuditPassword("");
+                      setClearAuditError("");
+                    } else {
+                      setClearAuditError("Incorrect password.");
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={() => { setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError(""); }}
+                  className="px-3 py-1.5 bg-white/10 text-white text-xs rounded-lg hover:bg-white/20 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+              {clearAuditError && (
+                <p className="text-red-400 text-[11px] font-semibold">{clearAuditError}</p>
+              )}
+            </div>
+          )}
+
           {aiOverrideLog.length === 0 ? (
             <p className="text-slate-500 text-xs text-center py-8">No manual overrides recorded yet. Any edits to AI-generated values will appear here.</p>
           ) : (
