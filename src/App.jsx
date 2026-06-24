@@ -147,7 +147,7 @@ const INITIAL_PROJECTS = [
     pm: "Sarah Chen", ba: "Marcus Webb", type: "Enterprise Banking",
     status: "On Track", progress: 0, plannedDays: 120, elapsed: 0,
     description: "Core banking system modernisation with API-first architecture.",
-    budget: 280000, budgetSource: "manual", spent: 0,
+    budget: 280000, budgetSource: "ai", spent: 0,
     team: [
       { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Fintech" },
       { name: "Marcus Webb", role: "BA", skillStars: 4, specialty: "Banking" }
@@ -159,7 +159,7 @@ const INITIAL_PROJECTS = [
     pm: "James Okonkwo", ba: "Priya Sharma", type: "Mobile App",
     status: "On Track", progress: 0, plannedDays: 90, elapsed: 0,
     description: "Customer-facing loyalty & shopping mobile app for iOS and Android.",
-    budget: 95000, budgetSource: "manual", spent: 0,
+    budget: 95000, budgetSource: "ai", spent: 0,
     team: [
       { name: "James Okonkwo", role: "PM", skillStars: 4, specialty: "Mobile Apps" },
       { name: "Priya Sharma", role: "BA", skillStars: 4, specialty: "Retail" }
@@ -171,7 +171,7 @@ const INITIAL_PROJECTS = [
     pm: "Sarah Chen", ba: "Elena Volkov", type: "Healthcare SaaS",
     status: "On Track", progress: 0, plannedDays: 150, elapsed: 0,
     description: "Telehealth and patient management SaaS platform with HL7 FHIR compliance.",
-    budget: 420000, budgetSource: "manual", spent: 0,
+    budget: 420000, budgetSource: "ai", spent: 0,
     team: [
       { name: "Sarah Chen", role: "PM", skillStars: 5, specialty: "Healthcare" },
       { name: "Elena Volkov", role: "BA", skillStars: 5, specialty: "Healthcare" }
@@ -457,7 +457,6 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const handleLogin = () => {
-    // Wipe the audit log on every fresh login so each session starts clean
     try { localStorage.removeItem("prismpm.overrideLog"); } catch {}
     setAiOverrideLog([]);
     setIsLoggedIn(true);
@@ -541,7 +540,7 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem("prismpm.overrideLog", JSON.stringify(aiOverrideLog)); } catch {} }, [aiOverrideLog]);
 
-  const logOverride = (entity, field, oldVal, newVal, source = "manual") => {
+  const logOverride = (entity, field, oldVal, newVal, source = "manual", projectId = null) => {
     setAiOverrideLog(prev => [{
       id: Date.now(),
       timestamp: new Date().toISOString(),
@@ -549,7 +548,8 @@ export default function App() {
       field,
       oldVal: String(oldVal),
       newVal: String(newVal),
-      source
+      source,
+      projectId
     }, ...prev.slice(0, 99)]);
   };
 
@@ -3144,7 +3144,7 @@ BUDGET REASONING: ${brd.budgetReasoning || "N/A"}
 }
 
 // ─── Budget Panel (AI-estimated, manually editable) ──────────────────────────
-function BudgetPanel({ project, setProjects, addNotification }) {
+function BudgetPanel({ project, setProjects, addNotification, logOverride = () => {} }) {
   const [editing, setEditing] = useState(false);
   const [draftBudget, setDraftBudget] = useState(project.budget ?? 0);
 
@@ -3161,6 +3161,14 @@ function BudgetPanel({ project, setProjects, addNotification }) {
   const saveBudget = () => {
     const value = Number(draftBudget);
     if (!Number.isFinite(value) || value < 0) return;
+    // Log the override — old value is the AI-estimated figure, new is the manual edit
+    logOverride(
+      `Project: ${project.name}`,
+      "budget",
+      `$${(project.budget ?? 0).toLocaleString()} (AI Estimate)`,
+      `$${value.toLocaleString()} (Manual Edit)`,
+      "manual"
+    );
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, budget: value, budgetSource: "manual" } : p));
     addNotification(`Budget for "${project.name}" manually set to $${value.toLocaleString()}.`, "system");
     setEditing(false);
@@ -3242,7 +3250,7 @@ function ProjectDetail({
   aiOverrideLog: aiOverrideLogAll = [],
   setAiOverrideLog = () => {}
 }) {
-  // Wrap logOverride so every entry from this project is tagged with its id
+  // Wrap so every entry from this project is auto-tagged with its id
   const logOverride = (entity, field, oldVal, newVal, source = "manual") =>
     logOverrideGlobal(entity, field, oldVal, newVal, source, project.id);
 
@@ -4019,7 +4027,7 @@ Return ONLY this JSON:
           {/* Budget — only shown once a budget exists (AI estimate from a requirements
               doc, or set manually). Stays hidden before that so nothing fabricated shows. */}
           {project.budget != null ? (
-            <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} />
+            <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} logOverride={logOverride} />
           ) : (
             <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 border-dashed text-center space-y-2">
               <span className="text-slate-500 text-xs font-bold uppercase block">Budget</span>
@@ -4777,7 +4785,6 @@ Return ONLY this JSON:
             </div>
           </div>
 
-          {/* Password-gated clear confirmation */}
           {showClearAudit && (
             <div className="bg-red-950/20 border border-red-800/30 rounded-xl p-4 space-y-3">
               <p className="text-red-400 text-xs font-bold">Enter password to permanently clear all audit entries for this project:</p>
@@ -4787,46 +4794,31 @@ Return ONLY this JSON:
                   value={clearAuditPassword}
                   onChange={e => { setClearAuditPassword(e.target.value); setClearAuditError(""); }}
                   onKeyDown={e => {
-                    if (e.key === "Enter") {
-                      if (clearAuditPassword === "password") {
-                        setAiOverrideLog(prev => prev.filter(e => e.projectId !== project.id));
-                        setShowClearAudit(false);
-                        setClearAuditPassword("");
-                        setClearAuditError("");
-                      } else {
-                        setClearAuditError("Incorrect password.");
-                      }
-                    }
+                    if (e.key !== "Enter") return;
+                    if (clearAuditPassword === "password") {
+                      setAiOverrideLog(prev => prev.filter(en => en.projectId !== project.id));
+                      setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError("");
+                    } else { setClearAuditError("Incorrect password."); }
                   }}
                   placeholder="Enter password..."
-                  className="bg-black border border-red-800/40 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 w-48"
                   autoFocus
+                  className="bg-black border border-red-800/40 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 w-48"
                 />
                 <button
                   onClick={() => {
                     if (clearAuditPassword === "password") {
-                      setAiOverrideLog(prev => prev.filter(e => e.projectId !== project.id));
-                      setShowClearAudit(false);
-                      setClearAuditPassword("");
-                      setClearAuditError("");
-                    } else {
-                      setClearAuditError("Incorrect password.");
-                    }
+                      setAiOverrideLog(prev => prev.filter(en => en.projectId !== project.id));
+                      setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError("");
+                    } else { setClearAuditError("Incorrect password."); }
                   }}
                   className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all"
-                >
-                  Confirm
-                </button>
+                >Confirm</button>
                 <button
                   onClick={() => { setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError(""); }}
                   className="px-3 py-1.5 bg-white/10 text-white text-xs rounded-lg hover:bg-white/20 transition-all"
-                >
-                  Cancel
-                </button>
+                >Cancel</button>
               </div>
-              {clearAuditError && (
-                <p className="text-red-400 text-[11px] font-semibold">{clearAuditError}</p>
-              )}
+              {clearAuditError && <p className="text-red-400 text-[11px] font-semibold">{clearAuditError}</p>}
             </div>
           )}
 
