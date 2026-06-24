@@ -502,28 +502,8 @@ export default function App() {
   });
 
   // UI state variables
-  const [aiOverrideLog, setAiOverrideLog] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("prismpm.overrideLog") || "[]"); } catch { return []; }
-  });
-  const [showCopilot, setShowCopilot] = useState(false);
-  const [copilotQuery, setCopilotQuery] = useState("");
-  const [copilotResponse, setCopilotResponse] = useState("");
-  const [copilotLoading, setCopilotLoading] = useState(false);
-  const [copilotHistory, setCopilotHistory] = useState([]);
-
-  useEffect(() => { try { localStorage.setItem("prismpm.overrideLog", JSON.stringify(aiOverrideLog)); } catch {} }, [aiOverrideLog]);
-
-  const logOverride = (entity, field, oldVal, newVal, source = "manual") => {
-    setAiOverrideLog(prev => [{
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      entity,
-      field,
-      oldVal: String(oldVal),
-      newVal: String(newVal),
-      source
-    }, ...prev.slice(0, 99)]);
-  };
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [storyDetailModal, setStoryDetailModal] = useState(null);
 
   // Sync to local storage
   useEffect(() => { try { localStorage.setItem("prismpm.projects", JSON.stringify(projects)); } catch {} }, [projects]);
@@ -547,30 +527,7 @@ export default function App() {
     setNotifications(prev => [newNotif, ...prev]);
   };
 
-  const handleCopilotAsk = async (query) => {
-    const key = localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
-    if (!key) { setCopilotResponse("⚠️ No Groq API key found. Add it in AI Setup first."); return; }
-    if (!query.trim()) return;
-    setCopilotLoading(true);
-    setCopilotResponse("");
-    const projectSummary = projects.map(p => {
-      const pStories = stories.filter(s => s.projectId === p.id);
-      const pRisks = risks.filter(r => r.projectId === p.id);
-      return `Project: ${p.name} | Progress: ${p.progress}% | Budget: $${(p.spent||0).toLocaleString()}/$${(p.budget||0).toLocaleString()} | Stories: ${pStories.filter(s=>s.status==="Done").length}/${pStories.length} done | Critical Risks: ${pRisks.filter(r=>r.severity==="Critical").length}`;
-    }).join("\n");
-    const context = `You are PrismPM Copilot, an expert AI project management assistant. Be concise, specific, and actionable.
-Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
-    try {
-      const resp = await callGroq(query, context, key, 800);
-      const text = typeof resp === "string" ? resp : (resp?.response || resp?.answer || resp?.text || JSON.stringify(resp));
-      setCopilotResponse(text);
-      setCopilotHistory(prev => [...prev.slice(-9), { q: query, a: text }]);
-    } catch (e) {
-      setCopilotResponse("Error: " + e.message);
-    } finally {
-      setCopilotLoading(false);
-    }
-  };
+  const currentProject = projects.find(p => p.id === activeProjectId) || projects[0] || null;
 
   // Recalculating project progress based on Story status across all Kanban columns.
   // Stories in Review/Testing count as partial progress — they represent real work
@@ -939,8 +896,6 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
                   onBack={() => setTab("dashboard")}
                   onDeleteProject={handleDeleteProject}
                   addNotification={addNotification}
-                  logOverride={logOverride}
-                  aiOverrideLog={aiOverrideLog}
                 />
               )}
             </div>
@@ -1004,81 +959,11 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
           addNotification={addNotification}
         />
       )}
-      {/* ── AI Copilot Floating Panel ── */}
-      {isLoggedIn && (
-        <>
-          {/* Floating button */}
-          <button
-            onClick={() => setShowCopilot(c => !c)}
-            className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-[#FFE600] text-black font-black text-xl shadow-2xl hover:bg-white transition-all flex items-center justify-center"
-            title="AI Copilot"
-          >
-            ✦
-          </button>
-
-          {/* Copilot panel */}
-          {showCopilot && (
-            <div className="fixed bottom-24 right-6 z-50 w-96 bg-[#111] border border-white/15 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: "70vh" }}>
-              <div className="flex justify-between items-center px-4 py-3 bg-[#FFE600]">
-                <span className="font-black text-black text-sm uppercase tracking-wider">✦ PrismPM Copilot</span>
-                <button onClick={() => setShowCopilot(false)} className="text-black font-bold text-lg leading-none">✕</button>
-              </div>
-
-              {/* History */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-                {copilotHistory.length === 0 && !copilotLoading && !copilotResponse && (
-                  <div className="space-y-2">
-                    <p className="text-slate-400 text-xs">Ask me anything about your projects. Try:</p>
-                    {["Which project is most at risk?", "Summarise this week's progress", "What should the team focus on next?", "Which stories are overdue?"].map(s => (
-                      <button key={s} onClick={() => { setCopilotQuery(s); handleCopilotAsk(s); }} className="w-full text-left text-xs text-slate-300 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-all">
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {copilotHistory.map((h, i) => (
-                  <div key={i} className="space-y-1.5">
-                    <div className="bg-[#FFE600]/10 border border-[#FFE600]/20 rounded-xl px-3 py-2 text-xs text-[#FFE600]">{h.q}</div>
-                    <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{h.a}</div>
-                  </div>
-                ))}
-                {copilotLoading && (
-                  <div className="flex items-center gap-2 text-[#FFE600] text-xs">
-                    <div className="w-3 h-3 border-2 border-[#FFE600] border-t-transparent rounded-full animate-spin" />
-                    Thinking...
-                  </div>
-                )}
-                {copilotResponse && !copilotLoading && (
-                  <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{copilotResponse}</div>
-                )}
-              </div>
-
-              {/* Input */}
-              <div className="p-3 border-t border-white/10 flex gap-2">
-                <input
-                  value={copilotQuery}
-                  onChange={e => setCopilotQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !copilotLoading) { handleCopilotAsk(copilotQuery); setCopilotQuery(""); } }}
-                  placeholder="Ask Copilot anything..."
-                  className="flex-1 bg-black border border-white/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFE600] placeholder-slate-600"
-                />
-                <button
-                  onClick={() => { handleCopilotAsk(copilotQuery); setCopilotQuery(""); }}
-                  disabled={copilotLoading || !copilotQuery.trim()}
-                  className="px-3 py-2 bg-[#FFE600] text-black text-xs font-bold rounded-xl hover:bg-white transition-all disabled:opacity-40"
-                >
-                  →
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }
 
-
+// ─── Dashboard Tab Component ────────────────────────────────────────────────
 function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees, onCreateProject, onResetWorkspace }) {
   const budgetedProjects = projects.filter(p => p.budget != null);
   const totalBudget = budgetedProjects.reduce((sum, p) => sum + p.budget, 0);
@@ -3201,9 +3086,7 @@ function ProjectDetail({
   onDropMemberFromProject,
   onBack,
   onDeleteProject,
-  addNotification,
-  logOverride = () => {},
-  aiOverrideLog = []
+  addNotification
 }) {
   const [subTab, setSubTab] = useState("overview");
   const [apiLoading, setApiLoading] = useState(false);
@@ -3214,12 +3097,7 @@ function ProjectDetail({
   const [docFileName, setDocFileName] = useState("");
   const [docError, setDocError] = useState("");
   const docFileInputRef = useRef(null);
-  const [editingWeekSummary, setEditingWeekSummary] = useState(false);
-  const [weekSummaryDraft, setWeekSummaryDraft] = useState("");
-  const [editingRiskId, setEditingRiskId] = useState(null);
-  const [pendingSimResult, setPendingSimResult] = useState(null); // holds AI result waiting for user review
-  const [showSimReview, setShowSimReview] = useState(false);
-  const [aiTeamSuggestions, setAiTeamSuggestions] = useState(null);
+  const [aiTeamSuggestions, setAiTeamSuggestions] = useState(null); // {members: [{name, role, reason}]}
   const [teamWeekView, setTeamWeekView] = useState(1); // which week to show in Team tab
 
   const projectStories = stories.filter(s => s.projectId === project.id);
@@ -3575,9 +3453,60 @@ Return ONLY this JSON:
       }
 
       if (result && result.week) {
-        // Show review modal instead of immediately applying
-        setPendingSimResult({ ...result, nextWeek, prevDone, prevRemaining, totalPts });
-        setShowSimReview(true);
+        // Apply story status updates from AI
+        if (result.storyUpdates && result.storyUpdates.length > 0) {
+          setStories(prev => prev.map(s => {
+            if (s.projectId !== project.id) return s;
+            const update = result.storyUpdates.find(u => u.title === s.title);
+            return update ? { ...s, status: update.status } : s;
+          }));
+        }
+
+        // If project is fully complete, force ALL stories to Done so Gantt/epics reflect 100%
+        if ((result.remainingPoints ?? prevRemaining) <= 0) {
+          setStories(prev => prev.map(s =>
+            s.projectId === project.id ? { ...s, status: "Done" } : s
+          ));
+        }
+
+        // Append the new weekly log, update elapsed days and spent budget
+        setProjects(prev => prev.map(p => {
+          if (p.id !== project.id) return p;
+          const newLog = {
+            week: result.week,
+            label: result.label || `Week ${nextWeek}`,
+            donePoints: result.donePoints || prevDone,
+            remainingPoints: result.remainingPoints ?? prevRemaining,
+            delayDays: result.delayDays || 0,
+            velocityTarget: result.velocityTarget || 10,
+            velocityActual: result.velocityActual || 0,
+            burndownPoints: result.burndownPoints || [],
+            risks: result.risks || [],
+            weekSummary: result.weekSummary || ""
+          };
+          const updatedLogs = [...(p.weeklyLogs || []), newLog];
+
+          // Budget burn: proportional to points done + 5% overrun per delay day.
+          // If no budget has been set yet (AI estimate missing and nothing entered
+          // manually), leave spent at 0 rather than computing against a null budget.
+          let newSpent = p.spent || 0;
+          if (p.budget != null) {
+            const totalPts = (newLog.donePoints + newLog.remainingPoints) || 1;
+            const baseSpend = Math.round(p.budget * (newLog.donePoints / totalPts));
+            const delayOverrun = Math.round(p.budget * 0.005 * (newLog.delayDays || 0));
+            newSpent = Math.min(baseSpend + delayOverrun, Math.round(p.budget * 1.15)); // cap at 15% over budget
+          }
+
+          return {
+            ...p,
+            weeklyLogs: updatedLogs,
+            elapsed: updatedLogs.length * 7,
+            spent: newSpent,
+          };
+        }));
+
+        setSelectedWeek(nextWeek);
+        addNotification(`Week ${nextWeek} simulated: ${result.velocityActual} pts completed. ${result.delayDays > 0 ? `⚠️ ${result.delayDays} day delay.` : "✅ On track."}`, "system");
       } else {
         alert("AI returned an unexpected response. Please try again.");
       }
@@ -3586,50 +3515,6 @@ Return ONLY this JSON:
     } finally {
       setSimulateLoading(false);
     }
-  };
-
-  const applySimResult = (result) => {
-    const { nextWeek, prevDone, prevRemaining } = result;
-    if (result.storyUpdates && result.storyUpdates.length > 0) {
-      setStories(prev => prev.map(s => {
-        if (s.projectId !== project.id) return s;
-        const update = result.storyUpdates.find(u => u.title === s.title);
-        return update ? { ...s, status: update.status } : s;
-      }));
-    }
-    if ((result.remainingPoints ?? prevRemaining) <= 0) {
-      setStories(prev => prev.map(s =>
-        s.projectId === project.id ? { ...s, status: "Done" } : s
-      ));
-    }
-    setProjects(prev => prev.map(p => {
-      if (p.id !== project.id) return p;
-      const newLog = {
-        week: result.week,
-        label: result.label || `Week ${nextWeek}`,
-        donePoints: result.donePoints || prevDone,
-        remainingPoints: result.remainingPoints ?? prevRemaining,
-        delayDays: result.delayDays || 0,
-        velocityTarget: result.velocityTarget || 10,
-        velocityActual: result.velocityActual || 0,
-        burndownPoints: result.burndownPoints || [],
-        risks: result.risks || [],
-        weekSummary: result.weekSummary || ""
-      };
-      const updatedLogs = [...(p.weeklyLogs || []), newLog];
-      let newSpent = p.spent || 0;
-      if (p.budget != null) {
-        const tp = (newLog.donePoints + newLog.remainingPoints) || 1;
-        const baseSpend = Math.round(p.budget * (newLog.donePoints / tp));
-        const delayOverrun = Math.round(p.budget * 0.005 * (newLog.delayDays || 0));
-        newSpent = Math.min(baseSpend + delayOverrun, Math.round(p.budget * 1.15));
-      }
-      return { ...p, weeklyLogs: updatedLogs, elapsed: updatedLogs.length * 7, spent: newSpent };
-    }));
-    setSelectedWeek(nextWeek);
-    addNotification(`Week ${nextWeek} applied: ${result.velocityActual} pts. ${result.delayDays > 0 ? `⚠️ ${result.delayDays}d delay.` : "✅ On track."}`, "system");
-    setPendingSimResult(null);
-    setShowSimReview(false);
   };
 
   const exportProjectPDF = () => {
@@ -3870,41 +3755,10 @@ Return ONLY this JSON:
             onChange={e => setSelectedWeek(Number(e.target.value))}
             className="w-full accent-[#FFE600] cursor-pointer"
           />
-          {currentWeekLog?.weekSummary !== undefined && (
-            <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-3 space-y-2">
-              {editingWeekSummary ? (
-                <div className="space-y-2">
-                  <textarea
-                    value={weekSummaryDraft}
-                    onChange={e => setWeekSummaryDraft(e.target.value)}
-                    rows={3}
-                    className="w-full bg-black border border-[#FFE600]/40 rounded-lg px-3 py-2 text-xs text-white resize-none focus:outline-none"
-                  />
-                  <div className="flex gap-2">
-                    <button onClick={() => {
-                      const old = currentWeekLog.weekSummary;
-                      setProjects(prev => prev.map(p => p.id !== project.id ? p : {
-                        ...p, weeklyLogs: p.weeklyLogs.map(l => l.week === selectedWeek ? { ...l, weekSummary: weekSummaryDraft } : l)
-                      }));
-                      logOverride(`Week ${selectedWeek} Summary`, "weekSummary", old, weekSummaryDraft);
-                      setEditingWeekSummary(false);
-                      addNotification(`Week ${selectedWeek} summary manually updated.`, "system");
-                    }} className="px-3 py-1 bg-[#FFE600] text-black text-xs font-bold rounded-lg">Save</button>
-                    <button onClick={() => setEditingWeekSummary(false)} className="px-3 py-1 bg-white/10 text-white text-xs rounded-lg">Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-between items-start gap-3">
-                  <p className="text-xs text-slate-300 italic leading-relaxed flex-1">
-                    <span className="text-[#FFE600] font-bold not-italic">Week {selectedWeek} Summary: </span>
-                    {currentWeekLog.weekSummary}
-                  </p>
-                  <button onClick={() => { setWeekSummaryDraft(currentWeekLog.weekSummary); setEditingWeekSummary(true); }}
-                    className="text-[9px] text-slate-500 hover:text-[#FFE600] border border-white/10 hover:border-[#FFE600]/30 px-2 py-1 rounded flex-shrink-0 transition-all">
-                    ✎ Edit
-                  </button>
-                </div>
-              )}
+          {currentWeekLog?.weekSummary && (
+            <div className="bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-xs text-slate-300 italic leading-relaxed">
+              <span className="text-[#FFE600] font-bold not-italic">Week {selectedWeek} Summary: </span>
+              {currentWeekLog.weekSummary}
             </div>
           )}
         </div>
@@ -3930,13 +3784,13 @@ Return ONLY this JSON:
 
       {/* Sub sections nav */}
       <div className="flex gap-1 bg-[#2E2E2E] p-1 rounded-xl w-fit flex-wrap">
-        {["overview", "team", "analytics", "risks", "AI Setup", "audit"].map(t => (
+        {["overview", "team", "analytics", "risks", "AI Setup"].map(t => (
           <button
             key={t}
             onClick={() => setSubTab(t)}
             className={`px-4 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${subTab === t ? "bg-[#FFE600] text-black" : "text-slate-400 hover:text-white"}`}
           >
-            {t === "audit" ? "Audit Log" : t}
+            {t}
           </button>
         ))}
       </div>
@@ -4639,63 +4493,13 @@ Return ONLY this JSON:
                   })
                   .map(risk => (
                     <div key={risk.id} className="bg-black/35 border border-white/5 p-3 rounded-xl space-y-2">
-                      {editingRiskId === risk.id ? (
-                        <div className="space-y-2">
-                          <input defaultValue={risk.title} id={`risk-title-${risk.id}`}
-                            className="w-full bg-black border border-[#FFE600]/40 rounded px-2 py-1 text-xs text-white" />
-                          <div className="flex gap-2">
-                            <select defaultValue={risk.severity} id={`risk-sev-${risk.id}`}
-                              className="bg-black border border-white/20 rounded px-2 py-1 text-xs text-white flex-1">
-                              {["Low","Medium","High","Critical"].map(s => <option key={s}>{s}</option>)}
-                            </select>
-                            <input type="number" defaultValue={risk.probability} id={`risk-prob-${risk.id}`}
-                              min="0" max="100" className="bg-black border border-white/20 rounded px-2 py-1 text-xs text-white w-20" placeholder="Prob %" />
-                          </div>
-                          <textarea defaultValue={risk.mitigationPlan} id={`risk-mit-${risk.id}`}
-                            rows={2} className="w-full bg-black border border-white/20 rounded px-2 py-1 text-xs text-white resize-none" />
-                          <div className="flex gap-2">
-                            <button onClick={() => {
-                              const newTitle = document.getElementById(`risk-title-${risk.id}`).value;
-                              const newSev = document.getElementById(`risk-sev-${risk.id}`).value;
-                              const newProb = document.getElementById(`risk-prob-${risk.id}`).value;
-                              const newMit = document.getElementById(`risk-mit-${risk.id}`).value;
-                              setRisks(prev => prev.map(r => r.id !== risk.id ? r : {
-                                ...r, title: newTitle, severity: newSev,
-                                probability: Number(newProb), mitigationPlan: newMit,
-                                _originalTitle: r._originalTitle || r.title,
-                                _originalSeverity: r._originalSeverity || r.severity,
-                                _corrected: true
-                              }));
-                              logOverride(`Risk: ${risk.title}`, "severity/mitigation", `${risk.severity} / ${risk.mitigationPlan}`, `${newSev} / ${newMit}`);
-                              setEditingRiskId(null);
-                              addNotification(`Risk "${newTitle}" manually updated.`, "system");
-                            }} className="px-3 py-1 bg-[#FFE600] text-black text-xs font-bold rounded-lg">Save</button>
-                            <button onClick={() => setEditingRiskId(null)} className="px-3 py-1 bg-white/10 text-white text-xs rounded-lg">Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <strong className="text-white text-xs">{risk.title}</strong>
-                              {risk._corrected && <span className="ml-2 text-[9px] text-[#FFE600] border border-[#FFE600]/30 px-1 rounded">Corrected</span>}
-                              {risk._originalTitle && risk._originalTitle !== risk.title && (
-                                <div className="text-[9px] text-slate-600 mt-0.5">Original: {risk._originalTitle} ({risk._originalSeverity})</div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <RiskBadge severity={risk.severity} />
-                              <button onClick={() => setEditingRiskId(risk.id)}
-                                className="text-[9px] text-slate-500 hover:text-[#FFE600] border border-white/10 hover:border-[#FFE600]/30 px-1.5 py-0.5 rounded transition-all">
-                                ✎
-                              </button>
-                            </div>
-                          </div>
-                          <p className="text-[11px] text-slate-400">Mitigation: {risk.mitigationPlan}</p>
-                          {risk.encounteredWeek && (
-                            <span className="text-[9px] font-mono text-[#FFE600]">Encountered in Week {risk.encounteredWeek}</span>
-                          )}
-                        </>
+                      <div className="flex justify-between">
+                        <strong>{risk.title}</strong>
+                        <RiskBadge severity={risk.severity} />
+                      </div>
+                      <p className="text-[11px] text-slate-400">Mitigation: {risk.mitigationPlan}</p>
+                      {risk.encounteredWeek && (
+                        <span className="text-[9px] font-mono text-[#FFE600]">Encountered in Week {risk.encounteredWeek}</span>
                       )}
                     </div>
                   ))}
@@ -4709,41 +4513,6 @@ Return ONLY this JSON:
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Audit Log tab */}
-      {subTab === "audit" && (
-        <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <h4 className="text-white text-xs font-bold uppercase tracking-widest">Manual Override Audit Log</h4>
-            <span className="text-[10px] text-slate-500">{aiOverrideLog.filter(l => l.entity.includes(project.name) || true).length} entries</span>
-          </div>
-          {aiOverrideLog.length === 0 ? (
-            <p className="text-slate-500 text-xs text-center py-8">No manual overrides recorded yet. Any edits to AI-generated values will appear here.</p>
-          ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {aiOverrideLog.map(entry => (
-                <div key={entry.id} className="bg-black/40 border border-white/5 rounded-xl p-3 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[#FFE600] text-[10px] font-bold">{entry.entity}</span>
-                    <span className="text-slate-600 text-[9px] font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-400">Field: <span className="text-white">{entry.field}</span></div>
-                  <div className="grid grid-cols-2 gap-2 text-[10px]">
-                    <div className="bg-red-950/20 border border-red-800/20 rounded px-2 py-1">
-                      <span className="text-red-400 font-bold block text-[9px]">ORIGINAL (AI)</span>
-                      <span className="text-slate-300 break-all">{entry.oldVal}</span>
-                    </div>
-                    <div className="bg-green-950/20 border border-green-800/20 rounded px-2 py-1">
-                      <span className="text-green-400 font-bold block text-[9px]">CORRECTED (Manual)</span>
-                      <span className="text-slate-300 break-all">{entry.newVal}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -4839,85 +4608,6 @@ Return ONLY this JSON:
               ✦ Run AI Generator
             </button>
           )}
-        </div>
-      )}
-
-      {/* ── Simulation Review Modal (Human-in-the-Loop) ── */}
-      {showSimReview && pendingSimResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-[#111] border border-[#FFE600]/30 rounded-2xl w-full max-w-xl shadow-2xl overflow-y-auto max-h-[90vh]">
-            <div className="flex justify-between items-center px-6 py-4 border-b border-white/10">
-              <div>
-                <h3 className="text-white font-bold text-sm">Review AI Simulation — Week {pendingSimResult.week}</h3>
-                <p className="text-slate-500 text-[10px] mt-0.5">Review and edit before accepting. Changes are logged in the Audit Log.</p>
-              </div>
-              <span className="text-[9px] text-[#FFE600] border border-[#FFE600]/30 px-2 py-1 rounded font-bold">HUMAN REVIEW</span>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "Points Done (cumulative)", key: "donePoints" },
-                  { label: "Points Remaining", key: "remainingPoints" },
-                  { label: "Delay Days", key: "delayDays" },
-                ].map(({ label, key }) => (
-                  <div key={key} className="bg-black/40 border border-white/10 rounded-xl p-3">
-                    <label className="text-[9px] text-slate-500 uppercase block mb-1">{label}</label>
-                    <input type="number" value={pendingSimResult[key]}
-                      onChange={e => { const old = pendingSimResult[key]; const val = Number(e.target.value); logOverride(`Week ${pendingSimResult.week} Simulation`, key, old, val, "human-review"); setPendingSimResult(p => ({ ...p, [key]: val })); }}
-                      className="w-full bg-transparent text-white font-mono text-lg font-bold focus:outline-none border-b border-white/10 focus:border-[#FFE600]"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {[{ label: "Velocity Target", key: "velocityTarget" }, { label: "Velocity Actual", key: "velocityActual" }].map(({ label, key }) => (
-                  <div key={key} className="bg-black/40 border border-white/10 rounded-xl p-3">
-                    <label className="text-[9px] text-slate-500 uppercase block mb-1">{label}</label>
-                    <input type="number" value={pendingSimResult[key]}
-                      onChange={e => { logOverride(`Week ${pendingSimResult.week}`, key, pendingSimResult[key], Number(e.target.value), "human-review"); setPendingSimResult(p => ({ ...p, [key]: Number(e.target.value) })); }}
-                      className="w-full bg-transparent text-white font-mono text-lg font-bold focus:outline-none border-b border-white/10 focus:border-[#FFE600]"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] text-slate-500 uppercase">Week Summary</label>
-                <textarea value={pendingSimResult.weekSummary}
-                  onChange={e => { logOverride(`Week ${pendingSimResult.week}`, "weekSummary", pendingSimResult.weekSummary, e.target.value, "human-review"); setPendingSimResult(p => ({ ...p, weekSummary: e.target.value })); }}
-                  rows={3} className="w-full bg-black border border-white/15 rounded-xl px-3 py-2 text-xs text-white resize-none focus:outline-none focus:border-[#FFE600]"
-                />
-              </div>
-              {pendingSimResult.storyUpdates?.length > 0 && (
-                <div className="space-y-1">
-                  <label className="text-[9px] text-slate-500 uppercase">Story Status Updates</label>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                    {pendingSimResult.storyUpdates.map((su, i) => (
-                      <div key={i} className="flex justify-between items-center bg-black/30 border border-white/5 rounded-lg px-3 py-2">
-                        <span className="text-xs text-white truncate flex-1 mr-2">{su.title}</span>
-                        <select value={su.status}
-                          onChange={e => { const ns = e.target.value; logOverride(`Story: ${su.title}`, "status", su.status, ns, "human-review"); setPendingSimResult(p => ({ ...p, storyUpdates: p.storyUpdates.map((s, j) => j === i ? { ...s, status: ns } : s) })); }}
-                          className="bg-[#2E2E2E] border border-white/10 text-white text-[10px] rounded px-2 py-1">
-                          <option>Backlog</option><option>To Do</option><option>In Progress</option><option>Review</option><option>Done</option>
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-3 px-6 pb-6">
-              <button onClick={() => applySimResult(pendingSimResult)}
-                className="flex-1 py-2.5 bg-[#FFE600] text-black font-bold text-xs uppercase rounded-xl hover:bg-white transition-all">
-                ✓ Accept & Apply Week {pendingSimResult.week}
-              </button>
-              <button onClick={() => { setPendingSimResult(null); setShowSimReview(false); }}
-                className="px-5 py-2.5 bg-white/10 text-white text-xs font-bold rounded-xl hover:bg-white/20 transition-all">
-                Discard
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>
