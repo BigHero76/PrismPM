@@ -24,7 +24,16 @@ const MODEL_UNAVAILABLE_PATTERN = /deprecated|decommissioned|does not exist|not 
 // complete, valid JSON — most often because max_tokens cut it off mid-object.
 const JSON_TRUNCATION_PATTERN = /failed to generate json|failed_generation/i;
 
-async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens) {
+async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens, forceJson = true) {
+  // Groq requires the word "json" to appear in messages when using json_object format.
+  // Copilot and other plain-text calls must NOT use response_format or Groq rejects them.
+  const wantsJson = forceJson && (
+    (systemPrompt || "").toLowerCase().includes("json") ||
+    prompt.toLowerCase().includes("json") ||
+    prompt.toLowerCase().includes("return json") ||
+    prompt.toLowerCase().includes("respond with")
+  );
+
   const response = await fetch(
     "https://api.groq.com/openai/v1/chat/completions",
     {
@@ -41,9 +50,7 @@ async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens) {
         ],
         temperature: 0.2,
         max_tokens: maxTokens,
-        response_format: {
-          type: "json_object",
-        },
+        ...(wantsJson ? { response_format: { type: "json_object" } } : {}),
       }),
     },
   );
@@ -65,7 +72,7 @@ async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens) {
   }
 }
 
-async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000) {
+async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000, forceJson = true) {
   const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
   if (!key) {
     throw new Error("Groq API key is missing. Add it in the BRD Generator panel.");
@@ -78,13 +85,10 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000
     let attempt = 0;
     while (attempt <= GROQ_RETRIES_PER_MODEL) {
       try {
-        return await callGroqOnce(model, prompt, systemPrompt, key, effectiveMaxTokens);
+        return await callGroqOnce(model, prompt, systemPrompt, key, effectiveMaxTokens, forceJson);
       } catch (e) {
         lastError = e;
 
-        // Rate limits are an org/token-budget problem, not a model problem —
-        // switching models doesn't help, so wait out the suggested cooldown
-        // and retry the SAME model instead of immediately surfacing an error.
         if (e.status === 429) {
           if (attempt < GROQ_RETRIES_PER_MODEL) {
             const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
@@ -93,18 +97,15 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000
             attempt++;
             continue;
           }
-          break; // retries exhausted on this model — fall through to the next model in the list
+          break;
         }
 
-        // The response likely got truncated before valid JSON could close —
-        // give it more room and retry the same model once.
         if (JSON_TRUNCATION_PATTERN.test(e.message) && attempt < GROQ_RETRIES_PER_MODEL && effectiveMaxTokens < GROQ_MAX_TOKENS_CEILING) {
           effectiveMaxTokens = Math.min(effectiveMaxTokens * 2, GROQ_MAX_TOKENS_CEILING);
           attempt++;
           continue;
         }
 
-        // Only switch models for genuine model-availability issues
         if (MODEL_UNAVAILABLE_PATTERN.test(e.message) && model !== GROQ_MODELS[GROQ_MODELS.length - 1]) {
           break;
         }
@@ -115,6 +116,28 @@ async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000
   }
 
   throw lastError || new Error("Groq request failed.");
+}
+
+// Plain-text variant — no JSON response_format, returns raw string.
+async function callGroqText(prompt, systemPrompt = "", apiKey = "", maxTokens = 800) {
+  const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
+  if (!key) throw new Error("No Groq API key found. Add it in AI Setup first.");
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: GROQ_MODELS[0],
+      messages: [
+        { role: "system", content: systemPrompt || "You are PrismPM Copilot, a concise and actionable AI project management assistant." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.3,
+      max_tokens: maxTokens,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || `Groq error ${response.status}`);
+  return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
 // ─── Seed Data ──────────────────────────────────────────────────────────────
@@ -560,11 +583,12 @@ export default function App() {
       const pRisks = risks.filter(r => r.projectId === p.id);
       return `Project: ${p.name} | Progress: ${p.progress}% | Budget: $${(p.spent||0).toLocaleString()}/$${(p.budget||0).toLocaleString()} | Stories: ${pStories.filter(s=>s.status==="Done").length}/${pStories.length} done | Critical Risks: ${pRisks.filter(r=>r.severity==="Critical").length}`;
     }).join("\n");
-    const context = `You are PrismPM Copilot, an expert AI project management assistant. Be concise, specific, and actionable.
+    const systemCtx = `You are PrismPM Copilot, an expert AI project management assistant. Be concise, specific, and actionable. Never respond with raw JSON.
 Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
     try {
-      const resp = await callGroq(query, context, key, 800);
-      const text = typeof resp === "string" ? resp : (resp?.response || resp?.answer || resp?.text || JSON.stringify(resp));
+      // Use plain-text call — no response_format:json_object — Groq rejects
+      // json_object mode when the messages don't contain the word "json".
+      const text = await callGroqText(query, systemCtx, key, 800);
       setCopilotResponse(text);
       setCopilotHistory(prev => [...prev.slice(-9), { q: query, a: text }]);
     } catch (e) {
@@ -1213,6 +1237,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
 // ─── Agile Board Tab ────────────────────────────────────────────────────────
 function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal }) {
   const [subTab, setSubTab] = useState("backlog");
+  const [apiLoading, setApiLoading] = useState(false);
   const projectStories = stories.filter(s => s.projectId === projectId);
   const projectEpics = epics.filter(e => e.projectId === projectId);
   const projectSprints = sprints.filter(s => s.projectId === projectId);
@@ -1408,8 +1433,6 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
     setShowCreateEpic(false);
     addNotification(`Epic "${epicObj.name}" created.`, "system");
   };
-
-  const [apiLoading, setApiLoading] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -2054,7 +2077,7 @@ function StoryDetailModal({ story, onClose, tasks, setTasks, employees, stories,
   const [taskPriority, setTaskPriority] = useState("Medium");
   const [taskDesc, setTaskDesc] = useState("");
   const [taskDue, setTaskDue] = useState("");
-
+  const [apiLoading, setApiLoading] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [showMentionSuggestions, setShowMentionSuggestions] = useState(false);
 
