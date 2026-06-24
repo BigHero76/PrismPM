@@ -538,7 +538,7 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem("prismpm.overrideLog", JSON.stringify(aiOverrideLog)); } catch {} }, [aiOverrideLog]);
 
-  const logOverride = (entity, field, oldVal, newVal, source = "manual", projectId = null) => {
+  const logOverride = (entity, field, oldVal, newVal, source = "manual") => {
     setAiOverrideLog(prev => [{
       id: Date.now(),
       timestamp: new Date().toISOString(),
@@ -546,8 +546,7 @@ export default function App() {
       field,
       oldVal: String(oldVal),
       newVal: String(newVal),
-      source,
-      projectId
+      source
     }, ...prev.slice(0, 99)]);
   };
 
@@ -943,6 +942,9 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
                   employees={employees}
                   addNotification={addNotification}
                   setStoryDetailModal={setStoryDetailModal}
+                  logOverride={(entity, field, oldVal, newVal, source) =>
+                    logOverride(entity, field, oldVal, newVal, source, activeProjectId)
+                  }
                 />
               )}
               {tab === "project" && selectedProject && (
@@ -1236,7 +1238,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
 }
 
 // ─── Agile Board Tab ────────────────────────────────────────────────────────
-function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal }) {
+function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal, logOverride = () => {} }) {
   const [subTab, setSubTab] = useState("backlog");
   const [apiLoading, setApiLoading] = useState(false);
   const projectStories = stories.filter(s => s.projectId === projectId);
@@ -1963,6 +1965,7 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                     if (!storyId) return;
                     const story = projectStories.find(s => s.id === storyId);
                     if (!story) return;
+                    logOverride(`Story: ${story.title}`, "status", story.status, col, "manual");
                     setStories(prev => prev.map(s => s.id === storyId ? { ...s, status: col } : s));
                     // Progress re-calculation fires automatically via the useEffect
                     // that watches stories — Review/Testing/Done all contribute now.
@@ -3141,7 +3144,7 @@ BUDGET REASONING: ${brd.budgetReasoning || "N/A"}
 }
 
 // ─── Budget Panel (AI-estimated, manually editable) ──────────────────────────
-function BudgetPanel({ project, setProjects, addNotification }) {
+function BudgetPanel({ project, setProjects, addNotification, logOverride = () => {} }) {
   const [editing, setEditing] = useState(false);
   const [draftBudget, setDraftBudget] = useState(project.budget ?? 0);
 
@@ -3158,6 +3161,7 @@ function BudgetPanel({ project, setProjects, addNotification }) {
   const saveBudget = () => {
     const value = Number(draftBudget);
     if (!Number.isFinite(value) || value < 0) return;
+    logOverride(`Project: ${project.name}`, "budget", project.budget ?? 0, value, "manual");
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, budget: value, budgetSource: "manual" } : p));
     addNotification(`Budget for "${project.name}" manually set to $${value.toLocaleString()}.`, "system");
     setEditing(false);
@@ -3235,16 +3239,9 @@ function ProjectDetail({
   onBack,
   onDeleteProject,
   addNotification,
-  logOverride: logOverrideGlobal = () => {},
-  aiOverrideLog: aiOverrideLogAll = []
+  logOverride = () => {},
+  aiOverrideLog = []
 }) {
-  // Wrap logOverride so every entry from this project is tagged with its id
-  const logOverride = (entity, field, oldVal, newVal, source = "manual") =>
-    logOverrideGlobal(entity, field, oldVal, newVal, source, project.id);
-
-  // Only show entries belonging to this project (legacy entries without projectId are hidden)
-  const aiOverrideLog = aiOverrideLogAll.filter(e => e.projectId === project.id);
-
   const [subTab, setSubTab] = useState("overview");
   const [apiLoading, setApiLoading] = useState(false);
   const [riskFilter, setRiskFilter] = useState(null);
@@ -3616,7 +3613,7 @@ Return ONLY this JSON:
 
       if (result && result.week) {
         // Show review modal instead of immediately applying
-        setPendingSimResult({ ...result, nextWeek, prevDone, prevRemaining, totalPts, projectId: project.id });
+        setPendingSimResult({ ...result, nextWeek, prevDone, prevRemaining, totalPts });
         setShowSimReview(true);
       } else {
         alert("AI returned an unexpected response. Please try again.");
@@ -4012,7 +4009,7 @@ Return ONLY this JSON:
           {/* Budget — only shown once a budget exists (AI estimate from a requirements
               doc, or set manually). Stays hidden before that so nothing fabricated shows. */}
           {project.budget != null ? (
-            <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} />
+            <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} logOverride={logOverride} />
           ) : (
             <div className="bg-[#2E2E2E]/20 p-5 rounded-2xl border border-white/5 border-dashed text-center space-y-2">
               <span className="text-slate-500 text-xs font-bold uppercase block">Budget</span>
@@ -4757,7 +4754,7 @@ Return ONLY this JSON:
         <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-6 space-y-4">
           <div className="flex justify-between items-center">
             <h4 className="text-white text-xs font-bold uppercase tracking-widest">Manual Override Audit Log</h4>
-            <span className="text-[10px] text-slate-500">{aiOverrideLog.length} entries</span>
+            <span className="text-[10px] text-slate-500">{aiOverrideLog.filter(l => l.entity.includes(project.name) || true).length} entries</span>
           </div>
           {aiOverrideLog.length === 0 ? (
             <p className="text-slate-500 text-xs text-center py-8">No manual overrides recorded yet. Any edits to AI-generated values will appear here.</p>
@@ -4904,7 +4901,7 @@ Return ONLY this JSON:
                   <div key={key} className="bg-black/40 border border-white/10 rounded-xl p-3">
                     <label className="text-[9px] text-slate-500 uppercase block mb-1">{label}</label>
                     <input type="number" value={pendingSimResult[key]}
-                      onChange={e => { const old = pendingSimResult[key]; const val = Number(e.target.value); logOverride(`Week ${pendingSimResult.week} Simulation`, key, old, val, "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, [key]: val })); }}
+                      onChange={e => { const old = pendingSimResult[key]; const val = Number(e.target.value); logOverride(`Week ${pendingSimResult.week} Simulation`, key, old, val, "human-review"); setPendingSimResult(p => ({ ...p, [key]: val })); }}
                       className="w-full bg-transparent text-white font-mono text-lg font-bold focus:outline-none border-b border-white/10 focus:border-[#FFE600]"
                     />
                   </div>
@@ -4915,7 +4912,7 @@ Return ONLY this JSON:
                   <div key={key} className="bg-black/40 border border-white/10 rounded-xl p-3">
                     <label className="text-[9px] text-slate-500 uppercase block mb-1">{label}</label>
                     <input type="number" value={pendingSimResult[key]}
-                      onChange={e => { logOverride(`Week ${pendingSimResult.week}`, key, pendingSimResult[key], Number(e.target.value), "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, [key]: Number(e.target.value) })); }}
+                      onChange={e => { logOverride(`Week ${pendingSimResult.week}`, key, pendingSimResult[key], Number(e.target.value), "human-review"); setPendingSimResult(p => ({ ...p, [key]: Number(e.target.value) })); }}
                       className="w-full bg-transparent text-white font-mono text-lg font-bold focus:outline-none border-b border-white/10 focus:border-[#FFE600]"
                     />
                   </div>
@@ -4924,7 +4921,7 @@ Return ONLY this JSON:
               <div className="space-y-1">
                 <label className="text-[9px] text-slate-500 uppercase">Week Summary</label>
                 <textarea value={pendingSimResult.weekSummary}
-                  onChange={e => { logOverride(`Week ${pendingSimResult.week}`, "weekSummary", pendingSimResult.weekSummary, e.target.value, "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, weekSummary: e.target.value })); }}
+                  onChange={e => { logOverride(`Week ${pendingSimResult.week}`, "weekSummary", pendingSimResult.weekSummary, e.target.value, "human-review"); setPendingSimResult(p => ({ ...p, weekSummary: e.target.value })); }}
                   rows={3} className="w-full bg-black border border-white/15 rounded-xl px-3 py-2 text-xs text-white resize-none focus:outline-none focus:border-[#FFE600]"
                 />
               </div>
@@ -4936,7 +4933,7 @@ Return ONLY this JSON:
                       <div key={i} className="flex justify-between items-center bg-black/30 border border-white/5 rounded-lg px-3 py-2">
                         <span className="text-xs text-white truncate flex-1 mr-2">{su.title}</span>
                         <select value={su.status}
-                          onChange={e => { const ns = e.target.value; logOverride(`Story: ${su.title}`, "status", su.status, ns, "human-review", pendingSimResult.projectId); setPendingSimResult(p => ({ ...p, storyUpdates: p.storyUpdates.map((s, j) => j === i ? { ...s, status: ns } : s) })); }}
+                          onChange={e => { const ns = e.target.value; logOverride(`Story: ${su.title}`, "status", su.status, ns, "human-review"); setPendingSimResult(p => ({ ...p, storyUpdates: p.storyUpdates.map((s, j) => j === i ? { ...s, status: ns } : s) })); }}
                           className="bg-[#2E2E2E] border border-white/10 text-white text-[10px] rounded px-2 py-1">
                           <option>Backlog</option><option>To Do</option><option>In Progress</option><option>Review</option><option>Done</option>
                         </select>
