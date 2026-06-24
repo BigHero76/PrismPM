@@ -510,6 +510,8 @@ export default function App() {
   const [copilotResponse, setCopilotResponse] = useState("");
   const [copilotLoading, setCopilotLoading] = useState(false);
   const [copilotHistory, setCopilotHistory] = useState([]);
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [storyDetailModal, setStoryDetailModal] = useState(null);
 
   useEffect(() => { try { localStorage.setItem("prismpm.overrideLog", JSON.stringify(aiOverrideLog)); } catch {} }, [aiOverrideLog]);
 
