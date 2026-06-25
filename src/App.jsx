@@ -544,12 +544,10 @@ export default function App() {
     setAiOverrideLog(prev => [{
       id: Date.now(),
       timestamp: new Date().toISOString(),
-      entity,
-      field,
+      entity, field,
       oldVal: String(oldVal),
       newVal: String(newVal),
-      source,
-      projectId
+      source, projectId
     }, ...prev.slice(0, 99)]);
   };
 
@@ -945,6 +943,9 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
                   employees={employees}
                   addNotification={addNotification}
                   setStoryDetailModal={setStoryDetailModal}
+                  logOverride={(entity, field, oldVal, newVal, source) =>
+                    logOverride(entity, field, oldVal, newVal, source, activeProjectId)
+                  }
                 />
               )}
               {tab === "project" && selectedProject && (
@@ -1116,6 +1117,13 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
   const totalCriticalRisks = risks.filter(r => r.severity === "Critical").length;
   const delayedTasks = tasks.filter(t => t.status !== "Done" && (new Date(t.due) < new Date()));
 
+  // Avg velocity across all projects that have weekly logs
+  const allLogs = projects.flatMap(p => p.weeklyLogs || []);
+  const avgVelocity = allLogs.length > 0 ? Math.round(allLogs.reduce((s, l) => s + (l.velocityActual || 0), 0) / allLogs.length) : null;
+
+  // Schedule impact: sum of delayDays across all weekly logs
+  const totalDelayDays = allLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
+
   // Team wide workload stats
   const memberWorkload = employees.map(emp => {
     const assignedStories = stories.filter(s => s.assignee === emp.name && s.status !== "Done");
@@ -1126,19 +1134,21 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
   return (
     <div className="space-y-8">
       {/* KPI Cards Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         {[
           { label: "Active Projects", value: projects.length, icon: "◈", color: "text-[#FFE600]" },
           { label: "Critical Risks", value: totalCriticalRisks, icon: "⚠", color: "text-rose-400" },
           { label: "Overdue Tasks", value: delayedTasks.length, icon: "⏱", color: "text-amber-400" },
           { label: "Budget Utilization", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "—", icon: "💰", color: "text-white" },
+          { label: "Avg Velocity", value: avgVelocity != null ? `${avgVelocity} pts` : "—", icon: "⚡", color: "text-sky-400" },
+          { label: "Schedule Impact", value: totalDelayDays > 0 ? `+${totalDelayDays}d` : "0d", icon: "📅", color: totalDelayDays > 0 ? "text-red-400" : "text-green-400" },
         ].map((k) => (
-          <div key={k.label} className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-5 hover:border-[#FFE600]/30 transition-all duration-300">
+          <div key={k.label} className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-4 hover:border-[#FFE600]/30 transition-all duration-300">
             <div className="flex items-center gap-2 mb-1.5">
-              <span className={`text-xl ${k.color}`}>{k.icon}</span>
-              <span className="text-slate-400 text-[9px] uppercase tracking-wider font-semibold">{k.label}</span>
+              <span className={`text-base ${k.color}`}>{k.icon}</span>
+              <span className="text-slate-400 text-[9px] uppercase tracking-wider font-semibold leading-tight">{k.label}</span>
             </div>
-            <div className={`font-mono font-bold text-3xl ${k.color}`}>{k.value}</div>
+            <div className={`font-mono font-bold text-2xl ${k.color}`}>{k.value}</div>
           </div>
         ))}
       </div>
@@ -1164,9 +1174,13 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
               const projStories = stories.filter(s => s.projectId === p.id);
               const isCritical = projRisks.some(r => r.severity === "Critical");
               const hasBudget = p.budget != null;
+              const projLogs = p.weeklyLogs || [];
+              const projVelocity = projLogs.length > 0 ? Math.round(projLogs.reduce((s, l) => s + (l.velocityActual || 0), 0) / projLogs.length) : null;
+              const projDelay = projLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
+              const borderColor = p.status === "On Track" ? "border-l-[#FFE600]" : p.status === "At Risk" ? "border-l-amber-500" : "border-l-red-500";
               return (
                 <div key={p.id}
-                  className="bg-[#2E2E2E]/30 border border-white/10 rounded-2xl p-6 cursor-pointer hover:border-[#FFE600]/40 hover:bg-[#2E2E2E]/60 transition-all duration-300 group"
+                  className={`bg-[#2E2E2E]/30 border border-white/10 border-l-4 ${borderColor} rounded-2xl p-6 cursor-pointer hover:bg-[#2E2E2E]/60 transition-all duration-300 group`}
                   onClick={() => onSelectProject(p)}>
                   <div className="flex items-start gap-5 flex-wrap md:flex-nowrap">
                     <PulseRing progress={p.progress} status={p.status} size={76} />
@@ -1174,6 +1188,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
                       <div className="flex items-center gap-3 mb-1.5 flex-wrap">
                         <h3 className="font-bold text-white text-base group-hover:text-[#FFE600] transition-colors">{p.name}</h3>
                         <StatusBadge status={p.status} />
+                        {projDelay > 0 && <span className="text-[10px] bg-red-900/40 text-red-400 px-2 py-0.5 rounded-full font-bold">+{projDelay}d delay</span>}
                       </div>
                       <p className="text-slate-400 text-xs mb-3 line-clamp-1">{p.description}</p>
                       <div className="flex items-center gap-4 flex-wrap text-[11px] text-slate-500">
@@ -1186,6 +1201,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
                         <span className={isCritical ? "text-rose-400 font-bold" : ""}>
                           {projRisks.length} Risk{projRisks.length !== 1 ? "s" : ""}
                         </span>
+                        {projVelocity != null && <><span>·</span><span className="text-sky-400">⚡ {projVelocity} pts/wk</span></>}
                       </div>
                     </div>
                     <div className="text-right min-w-[150px] w-full md:w-auto">
@@ -1239,7 +1255,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
 }
 
 // ─── Agile Board Tab ────────────────────────────────────────────────────────
-function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal }) {
+function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStories, sprints, setSprints, tasks, setTasks, employees, addNotification, setStoryDetailModal, logOverride = () => {} }) {
   const [subTab, setSubTab] = useState("backlog");
   const [apiLoading, setApiLoading] = useState(false);
   const projectStories = stories.filter(s => s.projectId === projectId);
@@ -1966,6 +1982,7 @@ function AgileBoardTab({ projectId, projects, epics, setEpics, stories, setStori
                     if (!storyId) return;
                     const story = projectStories.find(s => s.id === storyId);
                     if (!story) return;
+                    logOverride(`Story: ${story.title}`, "status", story.status, col, "manual", projectId);
                     setStories(prev => prev.map(s => s.id === storyId ? { ...s, status: col } : s));
                     // Progress re-calculation fires automatically via the useEffect
                     // that watches stories — Review/Testing/Done all contribute now.
@@ -3161,14 +3178,7 @@ function BudgetPanel({ project, setProjects, addNotification, logOverride = () =
   const saveBudget = () => {
     const value = Number(draftBudget);
     if (!Number.isFinite(value) || value < 0) return;
-    // Log the override — old value is the AI-estimated figure, new is the manual edit
-    logOverride(
-      `Project: ${project.name}`,
-      "budget",
-      `$${(project.budget ?? 0).toLocaleString()} (AI Estimate)`,
-      `$${value.toLocaleString()} (Manual Edit)`,
-      "manual"
-    );
+    logOverride(`Project: ${project.name}`, "budget", `$${(project.budget ?? 0).toLocaleString()} (AI Estimate)`, `$${value.toLocaleString()} (Manual Edit)`, "manual");
     setProjects(prev => prev.map(p => p.id === project.id ? { ...p, budget: value, budgetSource: "manual" } : p));
     addNotification(`Budget for "${project.name}" manually set to $${value.toLocaleString()}.`, "system");
     setEditing(false);
@@ -3250,11 +3260,8 @@ function ProjectDetail({
   aiOverrideLog: aiOverrideLogAll = [],
   setAiOverrideLog = () => {}
 }) {
-  // Wrap so every entry from this project is auto-tagged with its id
   const logOverride = (entity, field, oldVal, newVal, source = "manual") =>
     logOverrideGlobal(entity, field, oldVal, newVal, source, project.id);
-
-  // Only show entries belonging to this project
   const aiOverrideLog = aiOverrideLogAll.filter(e => e.projectId === project.id);
 
   const [subTab, setSubTab] = useState("overview");
@@ -3272,7 +3279,7 @@ function ProjectDetail({
   const [pendingSimResult, setPendingSimResult] = useState(null); // holds AI result waiting for user review
   const [showSimReview, setShowSimReview] = useState(false);
   const [aiTeamSuggestions, setAiTeamSuggestions] = useState(null);
-  const [teamWeekView, setTeamWeekView] = useState(1); // which week to show in Team tab
+  const [teamWeekView, setTeamWeekView] = useState(1);
   const [showClearAudit, setShowClearAudit] = useState(false);
   const [clearAuditPassword, setClearAuditPassword] = useState("");
   const [clearAuditError, setClearAuditError] = useState("");
@@ -3306,6 +3313,25 @@ function ProjectDetail({
   const spent = project.spent || 0;
 
   const delayDays = hasWeeklyData && currentWeekLog ? currentWeekLog.delayDays : 0;
+
+  // ── Predictive analytics ──────────────────────────────────────────────────
+  // Compute projected completion: if we know avg velocity, how many more weeks?
+  const weeklyLogs = project.weeklyLogs || [];
+  const avgWeeklyVelocity = weeklyLogs.length > 0
+    ? weeklyLogs.reduce((s, l) => s + (l.velocityActual || 0), 0) / weeklyLogs.length
+    : 0;
+  const remainingPts = hasWeeklyData && currentWeekLog ? currentWeekLog.remainingPoints : totalPoints;
+  const weeksToFinish = avgWeeklyVelocity > 0 ? Math.ceil(remainingPts / avgWeeklyVelocity) : null;
+  const projectedTotalWeeks = weeklyLogs.length + (weeksToFinish || 0);
+  const plannedWeeks = Math.ceil((project.plannedDays || 90) / 7);
+  const predictedDelayWeeks = hasWeeklyData && weeksToFinish != null
+    ? Math.max(0, projectedTotalWeeks - plannedWeeks)
+    : 0;
+
+  // Smart weekly summary bullets parsed from the current weekLog summary text
+  const smartSummary = currentWeekLog?.weekSummary
+    ? currentWeekLog.weekSummary.split(/[.\n]/).map(s => s.trim()).filter(s => s.length > 10).slice(0, 4)
+    : null;
   
   // Only reveal risks whose encounteredWeek has been simulated
   const simulatedWeekCount = project.weeklyLogs ? project.weeklyLogs.length : 0;
@@ -3983,17 +4009,19 @@ Return ONLY this JSON:
         </div>
       )}
 
-      {/* Sub sections nav */}
-      <div className="flex gap-1 bg-[#2E2E2E] p-1 rounded-xl w-fit flex-wrap">
-        {["overview", "team", "analytics", "risks", "AI Setup", "audit"].map(t => (
-          <button
-            key={t}
-            onClick={() => setSubTab(t)}
-            className={`px-4 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${subTab === t ? "bg-[#FFE600] text-black" : "text-slate-400 hover:text-white"}`}
-          >
-            {t === "audit" ? "Audit Log" : t}
-          </button>
-        ))}
+      {/* Sub sections nav — sticky so it stays visible while scrolling */}
+      <div className="sticky top-[73px] z-10 bg-black/90 backdrop-blur py-2 -mx-8 px-8 border-b border-white/5">
+        <div className="flex gap-1 bg-[#2E2E2E] p-1 rounded-xl w-fit flex-wrap">
+          {["overview", "team", "analytics", "risks", "AI Setup", "audit"].map(t => (
+            <button
+              key={t}
+              onClick={() => setSubTab(t)}
+              className={`px-4 py-1 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${subTab === t ? "bg-[#FFE600] text-black" : "text-slate-400 hover:text-white"}`}
+            >
+              {t === "audit" ? "Audit Log" : t === "AI Setup" ? "⚡ AI Setup" : t}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Overview */}
@@ -4024,8 +4052,47 @@ Return ONLY this JSON:
             </div>
           </div>
 
-          {/* Budget — only shown once a budget exists (AI estimate from a requirements
-              doc, or set manually). Stays hidden before that so nothing fabricated shows. */}
+          {/* Predictive delay banner */}
+          {predictedDelayWeeks > 0 && (
+            <div className="bg-red-950/30 border border-red-700/40 rounded-2xl p-4 flex items-start gap-3">
+              <span className="text-red-400 text-lg mt-0.5">🔴</span>
+              <div>
+                <p className="text-red-300 text-xs font-bold uppercase tracking-wider mb-1">Delay Prediction</p>
+                <p className="text-red-200 text-sm">
+                  At current velocity (<strong>{Math.round(avgWeeklyVelocity)} pts/wk</strong>), this project is likely to finish <strong>{predictedDelayWeeks} week{predictedDelayWeeks > 1 ? "s" : ""} late</strong>.{" "}
+                  <span className="text-red-400">{remainingPts} points remaining across ~{weeksToFinish} more weeks.</span>
+                </p>
+              </div>
+            </div>
+          )}
+          {hasWeeklyData && weeksToFinish != null && predictedDelayWeeks === 0 && (
+            <div className="bg-green-950/20 border border-green-800/30 rounded-2xl p-4 flex items-center gap-3">
+              <span className="text-green-400 text-lg">✅</span>
+              <p className="text-green-300 text-xs">
+                On track — projected to complete in <strong>~{weeksToFinish} more week{weeksToFinish !== 1 ? "s" : ""}</strong> at current velocity.
+              </p>
+            </div>
+          )}
+
+          {/* AI Smart Weekly Summary */}
+          {smartSummary && smartSummary.length > 0 && (
+            <div className="bg-[#2E2E2E]/30 border border-[#FFE600]/20 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[#FFE600] text-base">✦</span>
+                <h4 className="text-[#FFE600] text-xs font-bold uppercase tracking-widest">AI Weekly Summary — Week {selectedWeek}</h4>
+                <span className="text-[10px] text-slate-500 ml-auto">{currentWeekLog?.velocityActual} pts completed · {currentWeekLog?.delayDays > 0 ? `⚠️ ${currentWeekLog.delayDays}d delay` : "✅ On schedule"}</span>
+              </div>
+              <ul className="space-y-2">
+                {smartSummary.map((bullet, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                    <span className="text-[#FFE600] mt-0.5 flex-shrink-0">▸</span>
+                    <span>{bullet}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+              doc, or set manually. Stays hidden before that so nothing fabricated shows. */
           {project.budget != null ? (
             <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} logOverride={logOverride} />
           ) : (
@@ -4407,103 +4474,215 @@ Return ONLY this JSON:
       {subTab === "analytics" && (
         <div className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
-            {/* SVG Burndown Chart */}
+
+            {/* Interactive Burndown Chart */}
             <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
-              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Sprint Burndown Chart</h4>
-              <div className="w-full flex justify-center bg-black/40 p-3 rounded-xl min-h-[160px] items-center">
-                {!hasWeeklyData ? (
-                  <span className="text-slate-500 text-xs">No Burndown Data. Run AI Generator.</span>
-                ) : (
-                  <svg viewBox="0 0 300 150" className="w-full max-w-sm">
-                    <line x1="20" y1="10" x2="20" y2="130" stroke="#444" strokeWidth="1" />
-                    <line x1="20" y1="130" x2="280" y2="130" stroke="#444" strokeWidth="1" />
-                    <line x1="20" y1="20" x2="280" y2="130" stroke="#555" strokeDasharray="3,3" strokeWidth="1.5" />
-                    <polyline
-                      fill="none"
-                      stroke="#FFE600"
-                      strokeWidth="2.5"
-                      points={`20,20 ${burndownPointsStr}`}
-                    />
-                    <text x="25" y="15" fill="#aaa" fontSize="8" fontFamily="monospace">Planned (Ideal)</text>
-                    <text x="180" y="55" fill="#FFE600" fontSize="8" fontFamily="monospace">Actual (W{selectedWeek})</text>
-                    <text x="140" y="145" fill="#666" fontSize="8" fontFamily="monospace">Weeks 1 - {project.weeklyLogs.length}</text>
-                  </svg>
-                )}
+              <div className="flex justify-between items-center">
+                <h4 className="text-white text-xs font-bold uppercase tracking-widest">Sprint Burndown</h4>
+                <span className="text-[10px] text-slate-500">Hover for details</span>
               </div>
+              <div className="w-full bg-black/40 p-3 rounded-xl min-h-[200px] relative">
+                {!hasWeeklyData ? (
+                  <div className="flex items-center justify-center h-48 text-slate-500 text-xs">No data yet — simulate a week first.</div>
+                ) : (() => {
+                  const logs = project.weeklyLogs.slice(0, selectedWeek);
+                  const W = 300, H = 160, PL = 32, PT = 10, PB = 24, PR = 10;
+                  const chartW = W - PL - PR, chartH = H - PT - PB;
+                  const maxPts = Math.max(...logs.map(l => l.donePoints + l.remainingPoints)) || 1;
+                  const pts = logs.map((l, i) => {
+                    const x = PL + (i / Math.max(logs.length - 1, 1)) * chartW;
+                    const remaining = l.remainingPoints;
+                    const y = PT + (1 - remaining / maxPts) * chartH;
+                    return { x, y, log: l };
+                  });
+                  const idealStart = { x: PL, y: PT };
+                  const idealEnd = { x: PL + chartW, y: PT + chartH };
+
+                  // Projection line from last actual point
+                  const last = pts[pts.length - 1];
+                  const projEnd = last && avgWeeklyVelocity > 0
+                    ? { x: last.x + (last.log.remainingPoints / avgWeeklyVelocity) * (chartW / Math.max(logs.length, 1)), y: PT + chartH }
+                    : null;
+
+                  return (
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ cursor: "crosshair" }}>
+                      {/* Grid lines */}
+                      {[0, 0.25, 0.5, 0.75, 1].map(r => (
+                        <g key={r}>
+                          <line x1={PL} y1={PT + r * chartH} x2={PL + chartW} y2={PT + r * chartH} stroke="#222" strokeWidth="1" />
+                          <text x={PL - 3} y={PT + r * chartH + 3} fill="#555" fontSize="6" textAnchor="end">{Math.round(maxPts * (1 - r))}</text>
+                        </g>
+                      ))}
+                      {/* X axis labels */}
+                      {logs.map((l, i) => (
+                        <text key={i} x={PL + (i / Math.max(logs.length - 1, 1)) * chartW} y={H - 6} fill="#555" fontSize="6" textAnchor="middle">W{l.week}</text>
+                      ))}
+                      {/* Axes */}
+                      <line x1={PL} y1={PT} x2={PL} y2={PT + chartH} stroke="#333" strokeWidth="1" />
+                      <line x1={PL} y1={PT + chartH} x2={PL + chartW} y2={PT + chartH} stroke="#333" strokeWidth="1" />
+                      {/* Ideal line */}
+                      <line x1={idealStart.x} y1={idealStart.y} x2={idealEnd.x} y2={idealEnd.y} stroke="#444" strokeDasharray="3,3" strokeWidth="1.5" />
+                      <text x={idealEnd.x - 2} y={idealEnd.y - 3} fill="#444" fontSize="6" textAnchor="end">Ideal</text>
+                      {/* Projection line */}
+                      {projEnd && last && (
+                        <line x1={last.x} y1={last.y} x2={Math.min(projEnd.x, PL + chartW + 30)} y2={projEnd.y}
+                          stroke="#ef4444" strokeDasharray="4,3" strokeWidth="1.5" opacity="0.7" />
+                      )}
+                      {/* Area fill */}
+                      {pts.length > 1 && (
+                        <polygon
+                          points={`${PL},${PT + chartH} ${pts.map(p => `${p.x},${p.y}`).join(" ")} ${pts[pts.length-1].x},${PT + chartH}`}
+                          fill="#FFE600" opacity="0.07"
+                        />
+                      )}
+                      {/* Actual line */}
+                      {pts.length > 1 && (
+                        <polyline fill="none" stroke="#FFE600" strokeWidth="2.5"
+                          points={pts.map(p => `${p.x},${p.y}`).join(" ")}
+                          strokeLinejoin="round" strokeLinecap="round"
+                        />
+                      )}
+                      {/* Hover dots with tooltips */}
+                      {pts.map((p, i) => (
+                        <g key={i} className="group">
+                          <circle cx={p.x} cy={p.y} r="8" fill="transparent" />
+                          <circle cx={p.x} cy={p.y} r="3.5" fill="#FFE600" stroke="#000" strokeWidth="1.5" />
+                          <g opacity="0" style={{ transition: "opacity 0.15s" }}
+                            onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                            onMouseLeave={e => e.currentTarget.style.opacity = 0}>
+                            <rect x={Math.min(p.x - 28, W - 72)} y={p.y - 36} width={64} height={28} rx="4" fill="#1a1a1a" stroke="#FFE600" strokeWidth="0.5" />
+                            <text x={Math.min(p.x, W - 40)} y={p.y - 24} fill="#FFE600" fontSize="7" textAnchor="middle" fontWeight="bold">W{p.log.week}</text>
+                            <text x={Math.min(p.x, W - 40)} y={p.y - 14} fill="#aaa" fontSize="6" textAnchor="middle">{p.log.remainingPoints} pts left</text>
+                            <text x={Math.min(p.x, W - 40)} y={p.y - 6} fill={p.log.delayDays > 0 ? "#ef4444" : "#22c55e"} fontSize="6" textAnchor="middle">{p.log.delayDays > 0 ? `+${p.log.delayDays}d delay` : "On track"}</text>
+                          </g>
+                        </g>
+                      ))}
+                      <text x={PL} y={PT + chartH + 18} fill="#555" fontSize="6">← Weeks →</text>
+                      <text x={PL - 4} y={PT} fill="#555" fontSize="6" textAnchor="middle" transform={`rotate(-90, ${PL - 14}, ${PT + chartH / 2})`}>Pts Remaining</text>
+                    </svg>
+                  );
+                })()}
+              </div>
+              {hasWeeklyData && projEnd !== undefined && predictedDelayWeeks > 0 && (
+                <p className="text-[10px] text-red-400">🔴 Projection (red dashed) shows ~{predictedDelayWeeks}wk overrun at current pace</p>
+              )}
             </div>
 
-            {/* SVG Velocity Chart */}
+            {/* Interactive Velocity Chart */}
             <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
-              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Sprint Velocity Chart</h4>
-              <div className="w-full flex justify-center bg-black/40 p-3 rounded-xl min-h-[160px] items-center">
-                {!hasWeeklyData ? (
-                  <span className="text-slate-500 text-xs">No Velocity Data. Run AI Generator.</span>
-                ) : (
-                  <svg viewBox="0 0 300 150" className="w-full max-w-sm">
-                    <line x1="20" y1="10" x2="20" y2="130" stroke="#444" />
-                    <line x1="20" y1="130" x2="280" y2="130" stroke="#444" />
-                    {project.weeklyLogs.slice(0, selectedWeek).map((log, idx) => {
-                      const spacing = 45;
-                      const xStart = 30 + idx * spacing;
-                      const maxPts = Math.max(...project.weeklyLogs.map(l => Math.max(l.velocityTarget, l.velocityActual))) || 15;
-                      const targetHeight = (log.velocityTarget / maxPts) * 90;
-                      const actualHeight = (log.velocityActual / maxPts) * 90;
-                      return (
-                        <g key={log.week}>
-                          <rect
-                            x={xStart}
-                            y={130 - targetHeight}
-                            width={12}
-                            height={targetHeight}
-                            fill="#2E2E2E"
-                            rx={1}
-                          />
-                          <rect
-                            x={xStart + 14}
-                            y={130 - actualHeight}
-                            width={12}
-                            height={actualHeight}
-                            fill="#FFE600"
-                            rx={1}
-                          />
-                          <text x={xStart + 7} y="142" fill="#888" fontSize="8">W{log.week}</text>
-                        </g>
-                      );
-                    })}
-                    <text x="235" y="40" fill="#888" fontSize="7">■ Target</text>
-                    <text x="235" y="55" fill="#FFE600" fontSize="7">■ Actual</text>
-                  </svg>
-                )}
+              <div className="flex justify-between items-center">
+                <h4 className="text-white text-xs font-bold uppercase tracking-widest">Sprint Velocity</h4>
+                <span className="text-[10px] text-slate-500">Hover bars for detail</span>
               </div>
+              <div className="w-full bg-black/40 p-3 rounded-xl min-h-[200px] relative">
+                {!hasWeeklyData ? (
+                  <div className="flex items-center justify-center h-48 text-slate-500 text-xs">No data yet — simulate a week first.</div>
+                ) : (() => {
+                  const logs = project.weeklyLogs.slice(0, selectedWeek);
+                  const W = 300, H = 160, PL = 30, PT = 10, PB = 24;
+                  const chartW = W - PL - 10, chartH = H - PT - PB;
+                  const maxPts = Math.max(...logs.map(l => Math.max(l.velocityTarget || 0, l.velocityActual || 0)), 1);
+                  const barGroupW = chartW / logs.length;
+                  const barW = Math.min(14, barGroupW * 0.38);
+
+                  return (
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ cursor: "default" }}>
+                      {[0, 0.25, 0.5, 0.75, 1].map(r => (
+                        <g key={r}>
+                          <line x1={PL} y1={PT + r * chartH} x2={W - 10} y2={PT + r * chartH} stroke="#222" strokeWidth="1" />
+                          <text x={PL - 3} y={PT + r * chartH + 3} fill="#555" fontSize="6" textAnchor="end">{Math.round(maxPts * (1 - r))}</text>
+                        </g>
+                      ))}
+                      <line x1={PL} y1={PT} x2={PL} y2={PT + chartH} stroke="#333" strokeWidth="1" />
+                      <line x1={PL} y1={PT + chartH} x2={W - 10} y2={PT + chartH} stroke="#333" strokeWidth="1" />
+                      {/* Avg velocity line */}
+                      {avgWeeklyVelocity > 0 && (
+                        <>
+                          <line x1={PL} y1={PT + (1 - avgWeeklyVelocity / maxPts) * chartH}
+                            x2={W - 10} y2={PT + (1 - avgWeeklyVelocity / maxPts) * chartH}
+                            stroke="#60a5fa" strokeDasharray="3,3" strokeWidth="1" opacity="0.6" />
+                          <text x={W - 12} y={PT + (1 - avgWeeklyVelocity / maxPts) * chartH - 2} fill="#60a5fa" fontSize="6" textAnchor="end">avg</text>
+                        </>
+                      )}
+                      {logs.map((log, idx) => {
+                        const cx = PL + (idx + 0.5) * barGroupW;
+                        const targetH = (log.velocityTarget / maxPts) * chartH;
+                        const actualH = (log.velocityActual / maxPts) * chartH;
+                        const isSelected = log.week === selectedWeek;
+                        return (
+                          <g key={log.week} className="group">
+                            {/* Target bar */}
+                            <rect x={cx - barW - 1} y={PT + chartH - targetH} width={barW} height={targetH}
+                              fill={isSelected ? "#4a4a00" : "#2a2a2a"} rx="2"
+                              stroke={isSelected ? "#FFE600" : "transparent"} strokeWidth="0.5" />
+                            {/* Actual bar */}
+                            <rect x={cx + 1} y={PT + chartH - actualH} width={barW} height={actualH}
+                              fill={log.velocityActual >= log.velocityTarget ? "#22c55e" : "#FFE600"} rx="2" opacity="0.9" />
+                            {/* Week label */}
+                            <text x={cx} y={H - 6} fill={isSelected ? "#FFE600" : "#555"} fontSize="6" textAnchor="middle">W{log.week}</text>
+                            {/* Hover tooltip */}
+                            <rect x={cx - barW - 1} y={PT + chartH - Math.max(targetH, actualH) - 1} width={barW * 2 + 2} height={Math.max(targetH, actualH) + 1} fill="transparent"
+                              onMouseEnter={e => e.currentTarget.nextElementSibling.style.opacity = 1}
+                              onMouseLeave={e => e.currentTarget.nextElementSibling.style.opacity = 0} />
+                            <g style={{ opacity: 0, transition: "opacity 0.15s", pointerEvents: "none" }}>
+                              <rect x={Math.min(cx - 32, W - 70)} y={PT} width={68} height={36} rx="4" fill="#1a1a1a" stroke="#FFE600" strokeWidth="0.5" />
+                              <text x={Math.min(cx + 2, W - 35)} y={PT + 11} fill="#FFE600" fontSize="7" textAnchor="middle" fontWeight="bold">Week {log.week}</text>
+                              <text x={Math.min(cx + 2, W - 35)} y={PT + 21} fill="#aaa" fontSize="6" textAnchor="middle">Target: {log.velocityTarget}pts</text>
+                              <text x={Math.min(cx + 2, W - 35)} y={PT + 30} fill={log.velocityActual >= log.velocityTarget ? "#22c55e" : "#FFE600"} fontSize="6" textAnchor="middle">Actual: {log.velocityActual}pts</text>
+                            </g>
+                          </g>
+                        );
+                      })}
+                      <text x={PL + chartW / 2} y={H - 1} fill="#444" fontSize="6" textAnchor="middle">■ Target &nbsp;&nbsp; ■ Actual</text>
+                    </svg>
+                  );
+                })()}
+              </div>
+              {hasWeeklyData && (
+                <div className="flex gap-4 text-[10px]">
+                  <span className="text-slate-500">Avg velocity: <strong className="text-sky-400">{Math.round(avgWeeklyVelocity)} pts/wk</strong></span>
+                  <span className="text-slate-500">Weeks simulated: <strong className="text-white">{project.weeklyLogs.length}</strong></span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Gantt Timeline Chart */}
+          {/* Interactive Gantt */}
           <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
-            <h4 className="text-white text-xs font-bold uppercase tracking-widest">Gantt Timeline Projection</h4>
-            <div className="w-full bg-black/40 rounded-xl overflow-auto" style={{ maxHeight: 320 }}>
+            <div className="flex justify-between items-center">
+              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Gantt Timeline</h4>
+              <span className="text-[10px] text-slate-500">Click an epic row to expand stories</span>
+            </div>
+            <div className="w-full bg-black/40 rounded-xl overflow-auto">
               {!hasWeeklyData ? (
-                <div className="flex items-center justify-center h-32 text-slate-500 text-xs">No Gantt Timeline. Simulate at least one week to begin.</div>
+                <div className="flex items-center justify-center h-32 text-slate-500 text-xs">Simulate at least one week to see the Gantt.</div>
               ) : (() => {
                 const totalWeeks = project.weeklyLogs.length;
-                const COL_W = 52;
-                const ROW_H = 28;
-                const LABEL_W = 130;
-                const HEADER_H = 22;
-                const PAD_BOTTOM = 20;
-                const svgW = LABEL_W + totalWeeks * COL_W;
-                const svgH = HEADER_H + projectEpics.length * ROW_H + PAD_BOTTOM;
+                const COL_W = 52, ROW_H = 30, LABEL_W = 140, HEADER_H = 24, PAD = 16;
+                const expandedEpics = window.__prismExpandedEpics || {};
 
-                const getEpicSpan = (epicId) => {
-                  const epicStories = projectStories.filter(s => s.epicId === epicId);
-                  if (epicStories.length === 0) return { start: 1, end: totalWeeks };
+                const rows = [];
+                projectEpics.forEach(ep => {
+                  rows.push({ type: "epic", ep });
+                  if (expandedEpics[ep.id]) {
+                    projectStories.filter(s => s.epicId === ep.id).forEach(s => rows.push({ type: "story", s, ep }));
+                  }
+                });
+
+                const svgH = HEADER_H + rows.length * ROW_H + PAD;
+                const svgW = LABEL_W + totalWeeks * COL_W;
+
+                const getSpan = (epicId, storyId = null) => {
+                  const src = storyId
+                    ? projectStories.filter(s => s.id === storyId)
+                    : projectStories.filter(s => s.epicId === epicId);
+                  if (!src.length) return { start: 1, end: totalWeeks };
                   const projectSprintList = sprints.filter(sp => sp.projectId === project.id);
                   let start = Infinity, end = 0;
-                  epicStories.forEach(s => {
+                  src.forEach(s => {
                     const spIdx = projectSprintList.findIndex(sp => sp.id === s.sprintId);
                     if (spIdx >= 0) {
-                      const sw = spIdx * 2 + 1;
-                      const ew = Math.min(sw + 1, totalWeeks);
+                      const sw = spIdx * 2 + 1, ew = Math.min(sw + 1, totalWeeks);
                       if (sw < start) start = sw;
                       if (ew > end) end = ew;
                     }
@@ -4512,92 +4691,129 @@ Return ONLY this JSON:
                   return { start: Math.max(1, start), end: Math.min(totalWeeks, end) };
                 };
 
-                const getEpicProgress = (epicId) => {
-                  const epicStories = projectStories.filter(s => s.epicId === epicId);
-                  if (!epicStories.length) return 0;
-                  return epicStories.filter(s => s.status === "Done").length / epicStories.length;
+                const getProgress = (epicId, storyId = null) => {
+                  const src = storyId
+                    ? projectStories.filter(s => s.id === storyId)
+                    : projectStories.filter(s => s.epicId === epicId);
+                  if (!src.length) return 0;
+                  return src.filter(s => s.status === "Done").length / src.length;
                 };
 
+                const sprintLabels = sprints.filter(sp => sp.projectId === project.id);
+
                 return (
-                  <svg
-                    width={svgW}
-                    height={svgH}
-                    style={{ display: "block", fontFamily: "monospace" }}
-                  >
-                    {/* Column stripes + headers */}
-                    {Array.from({ length: totalWeeks }).map((_, i) => (
-                      <g key={i}>
-                        <rect
-                          x={LABEL_W + i * COL_W} y={0}
-                          width={COL_W} height={svgH - PAD_BOTTOM}
-                          fill={i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent"}
-                        />
-                        <text
-                          x={LABEL_W + i * COL_W + COL_W / 2} y={14}
-                          fill={i + 1 === selectedWeek ? "#FFE600" : "#555"}
-                          fontSize="9" textAnchor="middle" fontWeight="bold"
-                        >W{i + 1}</text>
-                      </g>
-                    ))}
-
-                    {/* Epic rows */}
-                    {projectEpics.map((ep, idx) => {
-                      const { start, end } = getEpicSpan(ep.id);
-                      const progress = getEpicProgress(ep.id);
-                      const isCompleted = progress >= 1;
-                      const barX = LABEL_W + (start - 1) * COL_W + 2;
-                      const barW = (end - start + 1) * COL_W - 4;
-                      const barY = HEADER_H + idx * ROW_H + 5;
-                      const barH = 14;
-
-                      const epicLogs = project.weeklyLogs.filter(l => l.week >= start && l.week <= end);
-                      const totalDelay = epicLogs.reduce((sum, l) => sum + (l.delayDays || 0), 0);
-                      const delayW = totalDelay > 0 ? Math.min(Math.round((totalDelay / 7) * COL_W), COL_W - 2) : 0;
-
+                  <svg width={svgW} height={svgH} style={{ display: "block", fontFamily: "monospace", minWidth: svgW }}>
+                    {/* Sprint header bands */}
+                    {sprintLabels.map((sp, idx) => {
+                      const startCol = idx * 2;
+                      const cols = Math.min(2, totalWeeks - startCol);
+                      if (cols <= 0) return null;
                       return (
-                        <g key={ep.id}>
-                          <line x1={0} y1={HEADER_H + idx * ROW_H} x2={svgW} y2={HEADER_H + idx * ROW_H} stroke="#1a1a1a" strokeWidth="1" />
-                          {/* Label */}
-                          <text x={6} y={barY + barH / 2 + 3.5}
-                            fill={isCompleted ? "#22c55e" : "#aaa"}
-                            fontSize="8" fontWeight="bold">
-                            {ep.name.length > 17 ? ep.name.substring(0, 17) + "…" : ep.name}{isCompleted ? " ✓" : ""}
+                        <g key={sp.id}>
+                          <rect x={LABEL_W + startCol * COL_W} y={0} width={cols * COL_W} height={HEADER_H}
+                            fill={idx % 2 === 0 ? "rgba(255,230,0,0.05)" : "rgba(255,255,255,0.02)"} />
+                          <text x={LABEL_W + startCol * COL_W + (cols * COL_W) / 2} y={14}
+                            fill="#666" fontSize="8" textAnchor="middle" fontWeight="bold">
+                            {sp.name?.replace("Sprint ", "S") || `S${idx + 1}`}
                           </text>
-                          {/* Track */}
-                          <rect x={barX} y={barY} width={barW} height={barH} fill="#111" rx="3" />
-                          {/* Fill */}
-                          <rect x={barX} y={barY} width={Math.max(3, barW * progress)} height={barH}
-                            fill={isCompleted ? "#22c55e" : "#FFE600"} rx="3" opacity="0.9" />
-                          {/* Delay */}
-                          {delayW > 0 && (
-                            <rect x={barX + barW} y={barY + 3} width={delayW} height={barH - 6}
-                              fill="#ef4444" rx="2" opacity="0.85" />
-                          )}
-                          {/* % label */}
-                          {barW > 24 && (
-                            <text x={barX + 4} y={barY + barH / 2 + 3.5}
-                              fill={isCompleted ? "#fff" : "#000"} fontSize="7" fontWeight="bold">
-                              {Math.round(progress * 100)}%
-                            </text>
-                          )}
                         </g>
                       );
                     })}
+                    {/* Week column headers */}
+                    {Array.from({ length: totalWeeks }).map((_, i) => (
+                      <g key={i}>
+                        <rect x={LABEL_W + i * COL_W} y={0} width={COL_W} height={svgH}
+                          fill={i % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent"} />
+                        <text x={LABEL_W + i * COL_W + COL_W / 2} y={HEADER_H - 4}
+                          fill={i + 1 === selectedWeek ? "#FFE600" : "#3a3a3a"}
+                          fontSize="7" textAnchor="middle">W{i + 1}</text>
+                      </g>
+                    ))}
+
+                    {/* Rows */}
+                    {rows.map((row, idx) => {
+                      const rowY = HEADER_H + idx * ROW_H;
+                      if (row.type === "epic") {
+                        const { start, end } = getSpan(row.ep.id);
+                        const progress = getProgress(row.ep.id);
+                        const isCompleted = progress >= 1;
+                        const barX = LABEL_W + (start - 1) * COL_W + 3;
+                        const barW = (end - start + 1) * COL_W - 6;
+                        const barH = 14, barY = rowY + (ROW_H - barH) / 2;
+                        const epicLogs = project.weeklyLogs.filter(l => l.week >= start && l.week <= end);
+                        const delayW = epicLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
+                        const delayBarW = delayW > 0 ? Math.min(Math.round((delayW / 7) * COL_W), COL_W - 2) : 0;
+                        const isExpanded = expandedEpics[row.ep.id];
+                        const storyCount = projectStories.filter(s => s.epicId === row.ep.id).length;
+                        return (
+                          <g key={row.ep.id} style={{ cursor: "pointer" }}
+                            onClick={() => {
+                              window.__prismExpandedEpics = { ...expandedEpics, [row.ep.id]: !isExpanded };
+                              // Force re-render via tiny state trick
+                              setSubTab("analytics");
+                            }}>
+                            <rect x={0} y={rowY} width={svgW} height={ROW_H}
+                              fill={isExpanded ? "rgba(255,230,0,0.04)" : "transparent"} />
+                            <line x1={0} y1={rowY} x2={svgW} y2={rowY} stroke="#1a1a1a" strokeWidth="1" />
+                            <text x={6} y={rowY + ROW_H / 2 + 4} fill={isCompleted ? "#22c55e" : "#ccc"}
+                              fontSize="8" fontWeight="bold">
+                              {isExpanded ? "▼" : "▶"} {row.ep.name.length > 14 ? row.ep.name.slice(0, 14) + "…" : row.ep.name}
+                            </text>
+                            <text x={LABEL_W - 6} y={rowY + ROW_H / 2 + 4} fill="#555" fontSize="7" textAnchor="end">
+                              {storyCount} stories
+                            </text>
+                            <rect x={barX} y={barY} width={barW} height={barH} fill="#111" rx="3" />
+                            <rect x={barX} y={barY} width={Math.max(3, barW * progress)} height={barH}
+                              fill={isCompleted ? "#22c55e" : "#FFE600"} rx="3" opacity="0.9" />
+                            {delayBarW > 0 && (
+                              <rect x={barX + barW} y={barY + 3} width={delayBarW} height={barH - 6}
+                                fill="#ef4444" rx="2" opacity="0.8" />
+                            )}
+                            {barW > 24 && (
+                              <text x={barX + 4} y={barY + barH / 2 + 3} fill={isCompleted ? "#fff" : "#000"} fontSize="7" fontWeight="bold">
+                                {Math.round(progress * 100)}%
+                              </text>
+                            )}
+                          </g>
+                        );
+                      } else {
+                        // Story row
+                        const st = row.s;
+                        const { start, end } = getSpan(null, st.id);
+                        const isDone = st.status === "Done";
+                        const barX = LABEL_W + (start - 1) * COL_W + 3;
+                        const barW2 = (end - start + 1) * COL_W - 6;
+                        const barH = 10, barY = rowY + (ROW_H - barH) / 2;
+                        const statusColor = isDone ? "#22c55e" : st.status === "In Progress" ? "#60a5fa" : st.status === "Reviewing" ? "#a78bfa" : "#444";
+                        return (
+                          <g key={st.id}>
+                            <rect x={0} y={rowY} width={svgW} height={ROW_H} fill="rgba(255,255,255,0.01)" />
+                            <line x1={0} y1={rowY} x2={svgW} y2={rowY} stroke="#141414" strokeWidth="1" />
+                            <text x={18} y={rowY + ROW_H / 2 + 3} fill="#777" fontSize="7">
+                              {st.title.length > 18 ? st.title.slice(0, 18) + "…" : st.title}
+                            </text>
+                            <text x={LABEL_W - 6} y={rowY + ROW_H / 2 + 3} fill={statusColor} fontSize="6" textAnchor="end">{st.status}</text>
+                            <rect x={barX} y={barY} width={barW2} height={barH} fill={statusColor} rx="2" opacity="0.7" />
+                            {st.points && barW2 > 16 && (
+                              <text x={barX + 3} y={barY + barH / 2 + 3} fill="#fff" fontSize="6">{st.points}pt</text>
+                            )}
+                          </g>
+                        );
+                      }
+                    })}
 
                     {/* Current week line */}
-                    <line
-                      x1={LABEL_W + (selectedWeek - 1) * COL_W} y1={HEADER_H}
-                      x2={LABEL_W + (selectedWeek - 1) * COL_W} y2={svgH - PAD_BOTTOM}
-                      stroke="#fff" strokeWidth="1" strokeDasharray="3,2" opacity="0.4"
-                    />
+                    <line x1={LABEL_W + (selectedWeek - 1) * COL_W} y1={HEADER_H}
+                      x2={LABEL_W + (selectedWeek - 1) * COL_W} y2={svgH - PAD}
+                      stroke="#fff" strokeWidth="1" strokeDasharray="3,2" opacity="0.3" />
 
                     {/* Legend */}
-                    <rect x={LABEL_W} y={svgH - 14} width={8} height={6} fill="#FFE600" rx="1" />
-                    <text x={LABEL_W + 10} y={svgH - 8} fill="#555" fontSize="7">In Progress</text>
-                    <rect x={LABEL_W + 68} y={svgH - 14} width={8} height={6} fill="#22c55e" rx="1" />
-                    <text x={LABEL_W + 78} y={svgH - 8} fill="#555" fontSize="7">Complete</text>
-                    <rect x={LABEL_W + 130} y={svgH - 14} width={8} height={6} fill="#ef4444" rx="1" />
-                    <text x={LABEL_W + 140} y={svgH - 8} fill="#555" fontSize="7">Delay</text>
+                    {[["#FFE600", "In Progress"], ["#22c55e", "Complete"], ["#ef4444", "Delay"], ["#60a5fa", "In Review"]].map(([c, l], i) => (
+                      <g key={l}>
+                        <rect x={LABEL_W + i * 72} y={svgH - 12} width={8} height={6} fill={c} rx="1" />
+                        <text x={LABEL_W + i * 72 + 11} y={svgH - 6} fill="#555" fontSize="7">{l}</text>
+                      </g>
+                    ))}
                   </svg>
                 );
               })()}
@@ -4775,53 +4991,37 @@ Return ONLY this JSON:
             <div className="flex items-center gap-3">
               <span className="text-[10px] text-slate-500">{aiOverrideLog.length} entries</span>
               {aiOverrideLog.length > 0 && !showClearAudit && (
-                <button
-                  onClick={() => { setShowClearAudit(true); setClearAuditPassword(""); setClearAuditError(""); }}
-                  className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all"
-                >
+                <button onClick={() => { setShowClearAudit(true); setClearAuditPassword(""); setClearAuditError(""); }}
+                  className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all">
                   🗑 Clear Log
                 </button>
               )}
             </div>
           </div>
-
           {showClearAudit && (
             <div className="bg-red-950/20 border border-red-800/30 rounded-xl p-4 space-y-3">
               <p className="text-red-400 text-xs font-bold">Enter password to permanently clear all audit entries for this project:</p>
               <div className="flex items-center gap-2">
-                <input
-                  type="password"
-                  value={clearAuditPassword}
+                <input type="password" value={clearAuditPassword} autoFocus
                   onChange={e => { setClearAuditPassword(e.target.value); setClearAuditError(""); }}
                   onKeyDown={e => {
                     if (e.key !== "Enter") return;
-                    if (clearAuditPassword === "password") {
-                      setAiOverrideLog(prev => prev.filter(en => en.projectId !== project.id));
-                      setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError("");
-                    } else { setClearAuditError("Incorrect password."); }
+                    if (clearAuditPassword === "password") { setAiOverrideLog(prev => prev.filter(en => en.projectId !== project.id)); setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError(""); }
+                    else setClearAuditError("Incorrect password.");
                   }}
                   placeholder="Enter password..."
-                  autoFocus
                   className="bg-black border border-red-800/40 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-red-500 w-48"
                 />
-                <button
-                  onClick={() => {
-                    if (clearAuditPassword === "password") {
-                      setAiOverrideLog(prev => prev.filter(en => en.projectId !== project.id));
-                      setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError("");
-                    } else { setClearAuditError("Incorrect password."); }
-                  }}
-                  className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all"
-                >Confirm</button>
-                <button
-                  onClick={() => { setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError(""); }}
-                  className="px-3 py-1.5 bg-white/10 text-white text-xs rounded-lg hover:bg-white/20 transition-all"
-                >Cancel</button>
+                <button onClick={() => {
+                  if (clearAuditPassword === "password") { setAiOverrideLog(prev => prev.filter(en => en.projectId !== project.id)); setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError(""); }
+                  else setClearAuditError("Incorrect password.");
+                }} className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all">Confirm</button>
+                <button onClick={() => { setShowClearAudit(false); setClearAuditPassword(""); setClearAuditError(""); }}
+                  className="px-3 py-1.5 bg-white/10 text-white text-xs rounded-lg hover:bg-white/20 transition-all">Cancel</button>
               </div>
               {clearAuditError && <p className="text-red-400 text-[11px] font-semibold">{clearAuditError}</p>}
             </div>
           )}
-
           {aiOverrideLog.length === 0 ? (
             <p className="text-slate-500 text-xs text-center py-8">No manual overrides recorded yet. Any edits to AI-generated values will appear here.</p>
           ) : (
