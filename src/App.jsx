@@ -530,6 +530,10 @@ export default function App() {
   const [aiOverrideLog, setAiOverrideLog] = useState(() => {
     try { return JSON.parse(localStorage.getItem("prismpm.overrideLog") || "[]"); } catch { return []; }
   });
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("prismpm.sidebarOpen") || "false"); } catch { return false; }
+  });
+  useEffect(() => { try { localStorage.setItem("prismpm.sidebarOpen", JSON.stringify(sidebarOpen)); } catch {} }, [sidebarOpen]);
   const [showCopilot, setShowCopilot] = useState(false);
   const [copilotQuery, setCopilotQuery] = useState("");
   const [copilotResponse, setCopilotResponse] = useState("");
@@ -770,61 +774,73 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
       ) : (
         <div className="flex min-h-screen">
           {/* Sidebar */}
-          <aside className="w-56 bg-[#2E2E2E] border-r border-white/10 flex flex-col sticky top-0 h-screen z-20">
-            <div className="p-6">
-              <div className="font-bold text-2xl text-[#FFE600] tracking-tight font-['Syne']">
-                PRISM<span className="text-white font-medium">PM</span>
-              </div>
-              <div className="text-[9px] text-[#E5E5E5] tracking-widest uppercase mt-1">
-                AI Project Intelligence
-              </div>
+          <aside className={`${sidebarOpen ? "w-56" : "w-14"} bg-[#111] border-r border-white/8 flex flex-col sticky top-0 h-screen z-20 transition-all duration-200 overflow-hidden`}>
+            {/* Logo + toggle row */}
+            <div className={`flex items-center ${sidebarOpen ? "justify-between px-5 py-5" : "justify-center py-5"}`}>
+              {sidebarOpen && (
+                <div>
+                  <div className="font-bold text-xl text-[#FFE600] tracking-tight" style={{ fontFamily: "Syne, sans-serif" }}>
+                    PRISM<span className="text-white font-medium">PM</span>
+                  </div>
+                  <div className="text-[8px] text-slate-500 tracking-widest uppercase mt-0.5">AI Intelligence</div>
+                </div>
+              )}
+              <button
+                onClick={() => setSidebarOpen(o => !o)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-[#FFE600] hover:bg-white/5 transition-all text-sm"
+                title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+              >
+                {sidebarOpen ? "←" : "→"}
+              </button>
             </div>
 
             {/* Navigation */}
-            <nav className="px-3 flex-1 space-y-1">
+            <nav className={`flex-1 space-y-0.5 ${sidebarOpen ? "px-2" : "px-1"}`}>
               {navItems.map(item => (
                 <button
                   key={item.id}
                   onClick={() => { setTab(item.id); setSelectedProject(null); }}
-                  className={`flex items-center gap-3 w-full px-4 py-2.5 rounded-xl text-left text-xs font-semibold tracking-wider transition-all duration-150 ${
+                  title={!sidebarOpen ? item.label : undefined}
+                  className={`flex items-center gap-3 w-full rounded-xl text-left text-xs font-semibold tracking-wider transition-all duration-150 ${sidebarOpen ? "px-3 py-2.5" : "px-0 py-2.5 justify-center"} ${
                     tab === item.id 
-                      ? "bg-[#FFE600]/10 text-white border-l-4 border-[#FFE600]" 
-                      : "text-slate-400 hover:text-white hover:bg-white/5 border-l-4 border-transparent"
+                      ? "bg-[#FFE600]/10 text-[#FFE600] border-l-2 border-[#FFE600]" 
+                      : "text-slate-500 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
                   }`}
                 >
-                  <span className="text-sm">{item.icon}</span>
-                  {item.label}
+                  <span className="text-sm shrink-0">{item.icon}</span>
+                  {sidebarOpen && <span>{item.label}</span>}
                 </button>
               ))}
             </nav>
 
-            {/* Quick Project selector link list */}
-            <div className="p-4 border-t border-white/10">
-              <div className="text-[9px] text-slate-500 uppercase tracking-widest mb-2 px-2">Active Projects</div>
-              <div className="space-y-1 max-h-36 overflow-y-auto">
-                {projects.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => handleSelectProject(p)}
-                    className="flex items-center gap-2.5 w-full px-2 py-1.5 rounded-lg text-left text-slate-400 hover:text-white hover:bg-[#FFE600]/5 transition-all"
-                  >
-                    <span className={`w-2 h-2 rounded-full ${p.status === "On Track" ? "bg-[#FFE600]" : p.status === "At Risk" ? "bg-amber-500" : "bg-red-500"}`} />
-                    <span className="text-[11px] truncate">{p.name}</span>
-                  </button>
-                ))}
+            {/* Quick Project list — only when expanded */}
+            {sidebarOpen && (
+              <div className="px-3 pb-2 border-t border-white/8 pt-3">
+                <div className="text-[8px] text-slate-600 uppercase tracking-widest mb-2 px-1">Projects</div>
+                <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                  {projects.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleSelectProject(p)}
+                      className="flex items-center gap-2 w-full px-1 py-1.5 rounded-lg text-left text-slate-500 hover:text-white hover:bg-[#FFE600]/5 transition-all"
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.status === "On Track" ? "bg-[#FFE600]" : p.status === "At Risk" ? "bg-amber-500" : "bg-red-500"}`} />
+                      <span className="text-[10px] truncate">{p.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Logout button */}
-            <div className="p-4 border-t border-white/10">
+            {/* Logout */}
+            <div className={`border-t border-white/8 ${sidebarOpen ? "p-3" : "p-1 flex justify-center"}`}>
               <button
-                onClick={() => {
-                  setIsLoggedIn(false);
-                  try { localStorage.removeItem("prismpm.isLoggedIn"); } catch {}
-                }}
-                className="flex items-center gap-3 w-full px-4 py-2 rounded-xl text-left text-xs font-semibold text-[#FFE600] hover:bg-[#FFE600]/10 transition-all"
+                onClick={() => { setIsLoggedIn(false); try { localStorage.removeItem("prismpm.isLoggedIn"); } catch {} }}
+                title={!sidebarOpen ? "Logout" : undefined}
+                className={`flex items-center gap-2.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-[#FFE600] hover:bg-[#FFE600]/8 transition-all ${sidebarOpen ? "w-full px-3 py-2" : "w-9 h-9 justify-center"}`}
               >
-                <span>🚪</span> Logout
+                <span>🚪</span>
+                {sidebarOpen && "Logout"}
               </button>
             </div>
           </aside>
@@ -832,22 +848,29 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
           {/* Main workspace */}
           <main className="flex-1 flex flex-col min-w-0">
             {/* Header top bar */}
-            <header className="sticky top-0 bg-black/95 backdrop-blur border-b border-white/10 px-8 py-4 flex items-center justify-between z-10">
-              <div>
-                <h1 className="text-xl font-extrabold tracking-wide text-white capitalize">
-                  {tab === "dashboard" ? "Project Portfolio" 
-                    : tab === "team" ? "Team Directory" 
-                    : tab === "brd" ? "AI BRD Generator" 
-                    : tab === "agile" ? `Agile Scrum Board: ${projects.find(p => p.id === activeProjectId)?.name || "Choose Project"}` 
-                    : selectedProject?.name || "Project"}
-                </h1>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  {tab === "dashboard" ? `${projects.length} Active Projects · ${risks.filter(r => r.severity === "Critical").length} Critical Risks` 
-                    : tab === "team" ? `${employees.length} Team Members Roster` 
-                    : tab === "brd" ? "Generate complete functional specs via LLM" 
-                    : tab === "agile" ? "Manage sprints, backlog, and Kanban flow"
-                    : selectedProject ? `${selectedProject.client} · ${selectedProject.type}` : ""}
-                </p>
+            <header className="sticky top-0 bg-black/95 backdrop-blur border-b border-white/8 px-6 py-3.5 flex items-center justify-between z-10">
+              <div className="flex items-center gap-4 min-w-0">
+                {!sidebarOpen && (
+                  <span className="font-bold text-sm text-[#FFE600] tracking-tight shrink-0" style={{ fontFamily: "Syne, sans-serif" }}>
+                    PRISM<span className="text-white font-medium">PM</span>
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <h1 className="text-base font-bold tracking-wide text-white truncate">
+                    {tab === "dashboard" ? "Portfolio" 
+                      : tab === "team" ? "Team Directory" 
+                      : tab === "brd" ? "BRD Generator" 
+                      : tab === "agile" ? `Agile Board` 
+                      : selectedProject?.name || "Project"}
+                  </h1>
+                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                    {tab === "dashboard" ? `${projects.length} projects · ${risks.filter(r => r.severity === "Critical").length} critical risks` 
+                      : tab === "team" ? `${employees.length} roster members` 
+                      : tab === "brd" ? "Generate functional specs via AI" 
+                      : tab === "agile" ? `${projects.find(p => p.id === activeProjectId)?.name || "Select project"}`
+                      : selectedProject ? `${selectedProject.client} · ${selectedProject.type}` : ""}
+                  </p>
+                </div>
               </div>
 
               <div className="flex items-center gap-5">
@@ -895,7 +918,7 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
             </header>
 
             {/* Content */}
-            <div className="p-8 max-w-6xl w-full mx-auto">
+            <div className="p-6 max-w-5xl w-full mx-auto flex-1">
               {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} onCreateProject={handleCreateProject} onResetWorkspace={() => {
                 if (!window.confirm("Reset workspace? This will clear all projects, epics, sprints, stories, tasks, and risks, and restore the default seed data.")) return;
                 setProjects(INITIAL_PROJECTS);
@@ -1132,23 +1155,32 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
   }).filter(e => e.points > 0).sort((a, b) => b.points - a.points);
 
   return (
-    <div className="space-y-8">
-      {/* KPI Cards Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+    <div className="space-y-6">
+      {/* KPI Strip — 3 primary + 3 secondary in a clean 2-row layout */}
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Active Projects", value: projects.length, icon: "◈", color: "text-[#FFE600]" },
-          { label: "Critical Risks", value: totalCriticalRisks, icon: "⚠", color: "text-rose-400" },
-          { label: "Overdue Tasks", value: delayedTasks.length, icon: "⏱", color: "text-amber-400" },
-          { label: "Budget Utilization", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "—", icon: "💰", color: "text-white" },
-          { label: "Avg Velocity", value: avgVelocity != null ? `${avgVelocity} pts` : "—", icon: "⚡", color: "text-sky-400" },
-          { label: "Schedule Impact", value: totalDelayDays > 0 ? `+${totalDelayDays}d` : "0d", icon: "📅", color: totalDelayDays > 0 ? "text-red-400" : "text-green-400" },
+          { label: "Active Projects", value: projects.length, icon: "◈", accent: true },
+          { label: "Critical Risks", value: totalCriticalRisks, icon: "⚠", warn: totalCriticalRisks > 0 },
+          { label: "Overdue Tasks", value: delayedTasks.length, icon: "⏱", warn: delayedTasks.length > 0 },
         ].map((k) => (
-          <div key={k.label} className="bg-[#2E2E2E]/40 border border-white/10 rounded-2xl p-4 hover:border-[#FFE600]/30 transition-all duration-300">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className={`text-base ${k.color}`}>{k.icon}</span>
-              <span className="text-slate-400 text-[9px] uppercase tracking-wider font-semibold leading-tight">{k.label}</span>
+          <div key={k.label} className={`bg-[#111] border rounded-xl p-4 transition-all ${k.accent ? "border-[#FFE600]/20" : k.warn && k.value > 0 ? "border-red-900/40" : "border-white/8"}`}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold">{k.label}</span>
+              <span className="text-slate-600 text-xs">{k.icon}</span>
             </div>
-            <div className={`font-mono font-bold text-2xl ${k.color}`}>{k.value}</div>
+            <div className={`font-mono font-bold text-3xl ${k.accent ? "text-[#FFE600]" : k.warn && k.value > 0 ? "text-red-400" : "text-white"}`}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Budget Used", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "—" },
+          { label: "Avg Velocity", value: avgVelocity != null ? `${avgVelocity} pts` : "—" },
+          { label: "Schedule Delay", value: totalDelayDays > 0 ? `+${totalDelayDays}d` : "0d", warn: totalDelayDays > 0 },
+        ].map((k) => (
+          <div key={k.label} className="bg-[#111] border border-white/8 rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold">{k.label}</span>
+            <span className={`font-mono font-semibold text-sm ${k.warn ? "text-red-400" : "text-slate-300"}`}>{k.value}</span>
           </div>
         ))}
       </div>
@@ -1156,100 +1188,100 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
       {/* New Project Creation */}
       <NewProjectPanel employees={employees} onCreateProject={onCreateProject} />
 
-      {/* Portfolio Overview Section */}
-      <div className="grid gap-6">
-        <div>
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-[#FFE600] font-bold text-xs uppercase tracking-widest">Enterprise Projects Portfolio</h2>
-            <button
-              onClick={onResetWorkspace}
-              className="text-[10px] text-red-400 font-bold border border-red-900/30 hover:border-red-400 px-2 py-1 rounded bg-black transition-all"
-            >
-              Reset Workspace to Empty Slate
-            </button>
-          </div>
-          <div className="grid gap-4">
-            {projects.map((p) => {
-              const projRisks = risks.filter(r => r.projectId === p.id);
-              const projStories = stories.filter(s => s.projectId === p.id);
-              const isCritical = projRisks.some(r => r.severity === "Critical");
-              const hasBudget = p.budget != null;
-              const projLogs = p.weeklyLogs || [];
-              const projVelocity = projLogs.length > 0 ? Math.round(projLogs.reduce((s, l) => s + (l.velocityActual || 0), 0) / projLogs.length) : null;
-              const projDelay = projLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
-              const borderColor = p.status === "On Track" ? "border-l-[#FFE600]" : p.status === "At Risk" ? "border-l-amber-500" : "border-l-red-500";
-              return (
-                <div key={p.id}
-                  className={`bg-[#2E2E2E]/30 border border-white/10 border-l-4 ${borderColor} rounded-2xl p-6 cursor-pointer hover:bg-[#2E2E2E]/60 transition-all duration-300 group`}
-                  onClick={() => onSelectProject(p)}>
-                  <div className="flex items-start gap-5 flex-wrap md:flex-nowrap">
-                    <PulseRing progress={p.progress} status={p.status} size={76} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1.5 flex-wrap">
-                        <h3 className="font-bold text-white text-base group-hover:text-[#FFE600] transition-colors">{p.name}</h3>
-                        <StatusBadge status={p.status} />
-                        {projDelay > 0 && <span className="text-[10px] bg-red-900/40 text-red-400 px-2 py-0.5 rounded-full font-bold">+{projDelay}d delay</span>}
-                      </div>
-                      <p className="text-slate-400 text-xs mb-3 line-clamp-1">{p.description}</p>
-                      <div className="flex items-center gap-4 flex-wrap text-[11px] text-slate-500">
-                        <span>Client: <strong className="text-white">{p.client}</strong></span>
-                        <span>·</span>
-                        <Stars count={p.clientStars} size="sm" />
-                        <span>·</span>
-                        <span>PM: <strong className="text-slate-300">{p.pm}</strong></span>
-                        <span>·</span>
-                        <span className={isCritical ? "text-rose-400 font-bold" : ""}>
-                          {projRisks.length} Risk{projRisks.length !== 1 ? "s" : ""}
-                        </span>
-                        {projVelocity != null && <><span>·</span><span className="text-sky-400">⚡ {projVelocity} pts/wk</span></>}
-                      </div>
-                    </div>
-                    <div className="text-right min-w-[150px] w-full md:w-auto">
-                      <div className="text-slate-500 text-[10px] uppercase mb-1">Budget Burn</div>
-                      {hasBudget ? (
-                        <>
-                          <div className="font-mono text-sm text-white mb-1.5">
-                            ${(p.spent / 1000).toFixed(0)}k <span className="text-slate-500">/ ${(p.budget / 1000).toFixed(0)}k</span>
-                          </div>
-                          <ProgressBar value={(p.spent / p.budget) * 100} />
-                        </>
-                      ) : (
-                        <div className="text-[10px] text-amber-400/80 italic">Awaiting AI estimate</div>
+      {/* Portfolio */}
+      <div>
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Projects</h2>
+          <button
+            onClick={onResetWorkspace}
+            className="text-[9px] text-slate-600 hover:text-red-400 font-semibold transition-colors"
+          >
+            Reset workspace
+          </button>
+        </div>
+        <div className="space-y-2">
+          {projects.map((p) => {
+            const projRisks = risks.filter(r => r.projectId === p.id);
+            const projStories = stories.filter(s => s.projectId === p.id);
+            const doneStories = projStories.filter(s => s.status === "Done").length;
+            const isCritical = projRisks.some(r => r.severity === "Critical");
+            const hasBudget = p.budget != null;
+            const projLogs = p.weeklyLogs || [];
+            const projDelay = projLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
+            const accentColor = p.status === "On Track" || p.status === "In Progress" ? "#FFE600" : p.status === "At Risk" ? "#f59e0b" : "#ef4444";
+            return (
+              <div
+                key={p.id}
+                className="bg-[#111] border border-white/8 rounded-xl p-4 cursor-pointer hover:border-[#FFE600]/25 hover:bg-[#141414] transition-all duration-200 group"
+                onClick={() => onSelectProject(p)}
+                style={{ borderLeft: `3px solid ${accentColor}` }}
+              >
+                <div className="flex items-center gap-4">
+                  {/* Progress ring — smaller, tighter */}
+                  <div className="shrink-0">
+                    <PulseRing progress={p.progress} status={p.status} size={52} />
+                  </div>
+
+                  {/* Main info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2.5 mb-0.5">
+                      <h3 className="font-semibold text-white text-sm group-hover:text-[#FFE600] transition-colors truncate">{p.name}</h3>
+                      <StatusBadge status={p.status} />
+                      {projDelay > 0 && (
+                        <span className="text-[9px] text-red-400 font-bold shrink-0">+{projDelay}d</span>
                       )}
                     </div>
+                    <p className="text-[11px] text-slate-500 truncate">{p.description}</p>
+                    <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-600">
+                      <span className="text-slate-400 font-medium">{p.client}</span>
+                      <span>·</span>
+                      <Stars count={p.clientStars} size="sm" />
+                      <span>·</span>
+                      <span>PM: <span className="text-slate-400">{p.pm}</span></span>
+                      {isCritical && <><span>·</span><span className="text-red-400 font-semibold">Critical risk</span></>}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
 
-        {/* Global Roster Workload Breakdown Widget */}
-        <div className="bg-[#2E2E2E]/20 border border-white/10 rounded-2xl p-6">
-          <h3 className="text-white text-xs font-bold uppercase tracking-widest mb-4">Team Workload Allocation</h3>
-          {memberWorkload.length === 0 ? (
-            <div className="text-slate-500 text-xs py-4 text-center">All team members have empty backlogs.</div>
-          ) : (
-            <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
-              {memberWorkload.map(item => {
-                const maxPoints = 15;
-                const utilPercent = Math.round((item.points / maxPoints) * 100);
-                return (
-                  <div key={item.name} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-300 font-medium">{item.name} <span className="text-slate-500 text-[10px]">({item.role})</span></span>
-                      <span className="text-slate-400 font-mono">{item.points} pts / {item.count} stories ({utilPercent}% Utilized)</span>
+                  {/* Budget — right side */}
+                  {hasBudget && (
+                    <div className="shrink-0 text-right">
+                      <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1">Budget</div>
+                      <div className="text-xs font-mono text-white">
+                        ${Math.round((p.spent || 0) / 1000)}k
+                        <span className="text-slate-600"> / ${Math.round(p.budget / 1000)}k</span>
+                      </div>
+                      <div className="mt-1.5 w-24">
+                        <ProgressBar value={p.budget > 0 ? Math.round(((p.spent || 0) / p.budget) * 100) : 0} />
+                      </div>
                     </div>
-                    <div className="w-full bg-[#1A1A1A] h-2 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-500 ${utilPercent > 100 ? "bg-red-500" : utilPercent > 70 ? "bg-[#FFE600]" : "bg-white"}`} style={{ width: `${Math.min(utilPercent, 100)}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  )}
+
+                  <span className="text-slate-700 group-hover:text-[#FFE600] transition-colors text-sm ml-1">→</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
+
+      {/* Workload snapshot — only if there's data */}
+      {memberWorkload.length > 0 && (
+        <div>
+          <h2 className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-3">Team Workload</h2>
+          <div className="bg-[#111] border border-white/8 rounded-xl p-4 space-y-2.5">
+            {memberWorkload.slice(0, 5).map((m) => (
+              <div key={m.name} className="flex items-center gap-3">
+                <span className="text-[11px] text-slate-400 w-32 truncate">{m.name}</span>
+                <span className="text-[9px] text-slate-600 w-20 truncate">{m.role}</span>
+                <div className="flex-1">
+                  <ProgressBar value={Math.min((m.points / 40) * 100, 100)} />
+                </div>
+                <span className="text-[10px] font-mono text-slate-400 w-14 text-right">{m.points} pts</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
