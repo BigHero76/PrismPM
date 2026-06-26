@@ -3683,6 +3683,8 @@ function ProjectDetail({
   const [pendingSimResult, setPendingSimResult] = useState(null); // holds AI result waiting for user review
   const [showSimReview, setShowSimReview] = useState(false);
   const [aiTeamSuggestions, setAiTeamSuggestions] = useState(null);
+  const [mitigationAdvice, setMitigationAdvice] = useState(null);
+  const [mitigationLoading, setMitigationLoading] = useState(false);
   const [teamWeekView, setTeamWeekView] = useState(1);
   const [showClearAudit, setShowClearAudit] = useState(false);
   const [clearAuditPassword, setClearAuditPassword] = useState("");
@@ -3737,11 +3739,15 @@ function ProjectDetail({
     ? currentWeekLog.weekSummary.split(/[.\n]/).map(s => s.trim()).filter(s => s.length > 10).slice(0, 4)
     : null;
   
-  // Only reveal risks whose encounteredWeek has been simulated
+  // Only reveal risks whose encounteredWeek has been simulated, and hide mitigated ones
   const simulatedWeekCount = project.weeklyLogs ? project.weeklyLogs.length : 0;
+  const isProjectComplete = simulatedWeekCount > 0 &&
+    (project.weeklyLogs[project.weeklyLogs.length - 1]?.remainingPoints ?? 1) <= 0;
   const activeRisks = simulatedWeekCount === 0
     ? []
-    : projectRisks.filter(r => !r.encounteredWeek || r.encounteredWeek <= selectedWeek);
+    : projectRisks.filter(r =>
+        (!r.encounteredWeek || r.encounteredWeek <= selectedWeek) && !r.mitigated
+      );
 
   const handleDocumentUpload = async (file) => {
     if (!file) return;
@@ -4073,6 +4079,40 @@ Return ONLY this JSON:
     }
   };
 
+  const handleGetMitigationAdvice = async () => {
+    const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
+    if (!key) { alert("Add a Groq API key in AI Setup first."); return; }
+    if (activeRisks.length === 0) return;
+    setMitigationLoading(true);
+    setMitigationAdvice(null);
+    const teamRoster = employees.map(e => `${e.name} (${e.role}, ${e.skills?.join(", ") || "general"})`).join("; ");
+    const riskList = activeRisks.map(r => `[${r.severity}] ${r.title} — ${r.mitigationPlan}`).join("\n");
+    const prompt = `You are a senior project management advisor. A project called "${project.name}" has the following active risks:
+
+${riskList}
+
+Current team: ${teamRoster}
+Weeks simulated so far: ${simulatedWeekCount}
+
+For each risk, provide:
+1. Whether the current team can handle it or if a new hire/contractor is needed
+2. If a new role is needed: the exact role title, key skills required, and how many weeks it would take to resolve the risk once that person joins
+3. One concrete action the PM can take THIS week to reduce the risk, using existing team members
+
+Keep the tone professional but direct. Format as a clear list per risk. Do not use JSON. Be specific — name actual team members where relevant.`;
+
+    try {
+      const text = await callGroqText(prompt,
+        "You are a senior PM risk advisor. Give specific, actionable advice. Never use JSON. Reference team members by name.",
+        key, 1200);
+      setMitigationAdvice(text);
+    } catch (e) {
+      setMitigationAdvice("Could not generate advice: " + e.message);
+    } finally {
+      setMitigationLoading(false);
+    }
+  };
+
   const applySimResult = (result) => {
     const { nextWeek, prevDone, prevRemaining } = result;
     if (result.storyUpdates && result.storyUpdates.length > 0) {
@@ -4085,6 +4125,10 @@ Return ONLY this JSON:
     if ((result.remainingPoints ?? prevRemaining) <= 0) {
       setStories(prev => prev.map(s =>
         s.projectId === project.id ? { ...s, status: "Done" } : s
+      ));
+      // Project complete — mark all risks as mitigated
+      setRisks(prev => prev.map(r =>
+        r.projectId === project.id ? { ...r, mitigated: true, mitigatedWeek: nextWeek } : r
       ));
     }
     setProjects(prev => prev.map(p => {
@@ -5283,6 +5327,50 @@ Return ONLY this JSON:
       {subTab === "risks" && (
         <TabErrorBoundary>
         <div className="space-y-6">
+
+          {/* Project complete — all risks resolved banner */}
+          {isProjectComplete && (
+            <div className="bg-green-950/30 border border-green-700/40 rounded-2xl px-5 py-4 flex items-center gap-3">
+              <span className="text-green-400 text-xl">✓</span>
+              <div>
+                <p className="text-green-300 text-xs font-bold">All risks resolved — project complete</p>
+                <p className="text-green-600 text-[10px] mt-0.5">All {projectRisks.length} identified risks were mitigated over the course of {simulatedWeekCount} simulated weeks.</p>
+              </div>
+            </div>
+          )}
+
+          {/* AI Risk Mitigation Advisor — only show when there are active risks */}
+          {!isProjectComplete && activeRisks.length > 0 && (
+            <div className="bg-[#111] border border-[#FFE600]/20 rounded-2xl p-5 space-y-3">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h4 className="text-[#FFE600] text-xs font-bold uppercase tracking-widest">✦ Risk Mitigation Advisor</h4>
+                  <p className="text-slate-500 text-[10px] mt-0.5">AI analysis of your {activeRisks.length} active risk{activeRisks.length > 1 ? "s" : ""} — team gaps, recommended hires, and immediate actions.</p>
+                </div>
+                <button
+                  onClick={handleGetMitigationAdvice}
+                  disabled={mitigationLoading}
+                  className="flex-shrink-0 px-3 py-1.5 bg-[#FFE600] text-black text-[10px] font-bold rounded-lg hover:bg-white transition-all disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {mitigationLoading
+                    ? <><div className="w-2.5 h-2.5 border border-black border-t-transparent rounded-full animate-spin" />Analysing...</>
+                    : mitigationAdvice ? "↻ Refresh" : "Analyse Risks"
+                  }
+                </button>
+              </div>
+
+              {!mitigationAdvice && !mitigationLoading && (
+                <p className="text-slate-600 text-[11px]">Click to get specific mitigation recommendations — including whether you need to bring in new team members and what they should handle.</p>
+              )}
+
+              {mitigationAdvice && !mitigationLoading && (
+                <div className="bg-black/40 border border-white/8 rounded-xl p-4 text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap space-y-3">
+                  {mitigationAdvice}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
               <h4 className="text-white text-xs font-bold uppercase tracking-widest">Risk Heatmap (5x5 Grid)</h4>
@@ -5291,6 +5379,8 @@ Return ONLY this JSON:
               <div className="w-full flex justify-center py-2">
                 {simulatedWeekCount === 0 ? (
                   <div className="text-slate-500 text-xs text-center py-10">No risks revealed yet. Simulate weeks to uncover risks progressively.</div>
+                ) : isProjectComplete ? (
+                  <div className="text-green-500 text-xs text-center py-10">✓ All risks resolved — project delivered successfully.</div>
                 ) : activeRisks.length === 0 ? (
                   <div className="text-slate-500 text-xs text-center py-10">No risks encountered up to Week {selectedWeek} yet.</div>
                 ) : (
@@ -5431,10 +5521,13 @@ Return ONLY this JSON:
                     </div>
                   ))}
                 {activeRisks.length === 0 && (
-                  <div className="text-slate-500 text-center py-6">
-                    {simulatedWeekCount === 0
-                      ? "Simulate weeks to reveal risks progressively."
-                      : "No risks encountered up to Week " + selectedWeek + "."}
+                  <div className="text-center py-6 text-xs">
+                    {isProjectComplete
+                      ? <span className="text-green-500">✓ All risks successfully mitigated.</span>
+                      : simulatedWeekCount === 0
+                        ? <span className="text-slate-500">Simulate weeks to reveal risks progressively.</span>
+                        : <span className="text-slate-500">No risks encountered up to Week {selectedWeek}.</span>
+                    }
                   </div>
                 )}
               </div>
