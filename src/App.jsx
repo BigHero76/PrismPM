@@ -4378,7 +4378,6 @@ Return ONLY this JSON:
               )}
             </div>
           )}
-              doc, or set manually. Stays hidden before that so nothing fabricated shows. */
           {project.budget != null ? (
             <BudgetPanel project={project} setProjects={setProjects} addNotification={addNotification} logOverride={logOverride} />
           ) : (
