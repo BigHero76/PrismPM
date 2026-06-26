@@ -1236,12 +1236,12 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
 
   // Per-project health score (0-100) for demo
   const getHealthScore = (p) => {
+    const logs = p.weeklyLogs || [];
+    if (logs.length === 0) return null; // no data yet
     const projRisks = risks.filter(r => r.projectId === p.id);
-    const projStories = stories.filter(s => s.projectId === p.id);
     let score = 80;
     score -= projRisks.filter(r => r.severity === "Critical").length * 15;
     score -= projRisks.filter(r => r.severity === "High").length * 7;
-    const logs = p.weeklyLogs || [];
     const lastLog = logs.slice(-1)[0];
     if (lastLog?.delayDays > 0) score -= Math.min(lastLog.delayDays * 3, 20);
     if (lastLog?.velocityActual < lastLog?.velocityTarget) score -= 8;
@@ -1440,7 +1440,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
             const projDelay = projLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
             const accentColor = p.status === "On Track" || p.status === "In Progress" ? "#FFE600" : p.status === "At Risk" ? "#f59e0b" : "#ef4444";
             const healthScore = getHealthScore(p);
-            const healthColor = healthScore >= 75 ? "text-green-400" : healthScore >= 55 ? "text-amber-400" : "text-red-400";
+            const healthColor = healthScore === null ? "text-slate-600" : healthScore >= 75 ? "text-green-400" : healthScore >= 55 ? "text-amber-400" : "text-red-400";
             const nextSprint = (() => {
               const ps = projStories.filter(s => s.status !== "Done" && s.sprintId);
               return ps.length > 0 ? `${ps.length} stories in sprint` : null;
@@ -1476,7 +1476,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
                   <div className="shrink-0 text-right space-y-2">
                     <div>
                       <div className="text-[8px] text-slate-600 uppercase tracking-wider mb-0.5">Health</div>
-                      <div className={`font-mono font-bold text-sm ${healthColor}`}>{healthScore}</div>
+                      <div className={`font-mono font-bold text-sm ${healthColor}`}>{healthScore ?? "—"}</div>
                     </div>
                     {hasBudget && (
                       <div>
