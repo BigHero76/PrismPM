@@ -809,6 +809,14 @@ Return ONLY this JSON (no markdown):
   useEffect(() => {
     if (!projects.length) return;
     const nextProjects = projects.map(p => {
+      // Don't calculate progress from story statuses until at least one week has been simulated.
+      // Before simulation, seed data story statuses are meaningless for progress display.
+      const hasSimulated = (p.weeklyLogs || []).length > 0;
+      if (!hasSimulated) {
+        if (p.progress !== 0) return { ...p, progress: 0, status: "On Track" };
+        return p;
+      }
+
       const projStories = stories.filter(s => s.projectId === p.id);
       if (projStories.length === 0) return { ...p, progress: 0 };
       const totalPoints = projStories.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
@@ -822,7 +830,7 @@ Return ONLY this JSON (no markdown):
       let newStatus = p.status;
       if (calculatedProgress >= 100) newStatus = "Completed";
       else if (calculatedProgress > 0 && p.status === "On Track") newStatus = "In Progress";
-      else if (calculatedProgress === 0) newStatus = p.weeklyLogs?.length > 0 ? p.status : "On Track";
+      else if (calculatedProgress === 0) newStatus = "On Track";
 
       if (p.progress !== calculatedProgress || p.status !== newStatus) {
         return { ...p, progress: calculatedProgress, status: newStatus };
@@ -1056,7 +1064,7 @@ Return ONLY this JSON (no markdown):
                       : selectedProject?.name || "Project"}
                   </h1>
                   <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                    {tab === "dashboard" ? `${projects.length} projects · ${projects.some(p => (p.weeklyLogs||[]).length > 0) ? risks.filter(r => r.severity === "Critical").length : 0} critical risks` 
+                    {tab === "dashboard" ? `${projects.length} projects · ${risks.filter(r => r.severity === "Critical").length} critical risks` 
                       : tab === "team" ? `${employees.length} roster members` 
                       : tab === "brd" ? "Generate functional specs via AI" 
                       : tab === "agile" ? `${projects.find(p => p.id === activeProjectId)?.name || "Select project"}`
@@ -1373,13 +1381,6 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
   const totalCriticalRisks = risks.filter(r => r.severity === "Critical").length;
   const totalHighRisks = risks.filter(r => r.severity === "High").length;
   const delayedTasks = tasks.filter(t => t.status !== "Done" && (new Date(t.due) < new Date()));
-
-  // Only surface risks and overdue tasks after at least one week has been simulated
-  // — before that, seed data risks/tasks shouldn't appear as real alerts
-  const hasAnySimulation = projects.some(p => (p.weeklyLogs || []).length > 0);
-  const displayedCriticalRisks = hasAnySimulation ? totalCriticalRisks : 0;
-  const displayedHighRisks = hasAnySimulation ? totalHighRisks : 0;
-  const displayedOverdueTasks = hasAnySimulation ? delayedTasks.length : 0;
   const allLogs = projects.flatMap(p => p.weeklyLogs || []);
   const avgVelocity = allLogs.length > 0 ? Math.round(allLogs.reduce((s, l) => s + (l.velocityActual || 0), 0) / allLogs.length) : null;
   const totalDelayDays = allLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
@@ -1418,8 +1419,8 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Active Projects", value: projects.length, sub: `${projects.filter(p => p.status === "On Track" || p.status === "In Progress").length} on track`, accent: true },
-          { label: "Risk Exposure", value: displayedCriticalRisks, sub: `${displayedHighRisks} high · ${displayedCriticalRisks} critical`, warn: displayedCriticalRisks > 0 },
-          { label: "Stories Complete", value: `${stories.filter(s => s.status === "Done").length}/${stories.length}`, sub: displayedOverdueTasks > 0 ? `${displayedOverdueTasks} overdue tasks` : hasAnySimulation ? "No overdue tasks" : "Simulate a week to track", warn: displayedOverdueTasks > 0 },
+          { label: "Risk Exposure", value: totalCriticalRisks, sub: `${totalHighRisks} high · ${totalCriticalRisks} critical`, warn: totalCriticalRisks > 0 },
+          { label: "Stories Complete", value: `${stories.filter(s => s.status === "Done").length}/${stories.length}`, sub: `${delayedTasks.length} overdue tasks`, warn: delayedTasks.length > 0 },
         ].map((k) => (
           <div key={k.label} className={`bg-[#111] border rounded-xl p-4 transition-all ${k.accent ? "border-[#FFE600]/25" : k.warn && (typeof k.value === "number" ? k.value > 0 : true) ? "border-red-900/30" : "border-white/8"}`}>
             <div className="flex items-center justify-between mb-2">
@@ -4011,6 +4012,20 @@ Return ONLY this JSON (no markdown, no extra text):
     }
     if (!aiInput.trim() && existingLogs.length === 0) {
       alert("Please upload a document or paste requirements text in the AI Setup tab before simulating."); return;
+    }
+
+    // Block simulation until PM, BA, and at least 2 additional members are assigned (minimum 4)
+    const currentTeam = project.team || [];
+    const hasPM = currentTeam.some(m => m.role === "PM");
+    const hasBA = currentTeam.some(m => m.role === "BA");
+    const otherMembers = currentTeam.filter(m => m.role !== "PM" && m.role !== "BA");
+    if (!hasPM || !hasBA || otherMembers.length < 2) {
+      const missing = [];
+      if (!hasPM) missing.push("a PM");
+      if (!hasBA) missing.push("a BA");
+      if (otherMembers.length < 2) missing.push(`${2 - otherMembers.length} more team member${2 - otherMembers.length > 1 ? "s" : ""}`);
+      alert(`Team not ready for simulation.\n\nYou need: PM + BA + at least 2 additional members (minimum 4 total).\n\nCurrently missing: ${missing.join(", ")}.\n\nGo to the Team tab to add members from the roster.`);
+      return;
     }
 
     const totalPts = projectStoryList.reduce((sum, s) => sum + (s.points || 0), 0);
