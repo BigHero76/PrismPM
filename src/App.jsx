@@ -4130,7 +4130,7 @@ Keep the tone professional but direct. Format as a clear list per risk. Do not u
   };
 
   const applySimResult = (result) => {
-    const { nextWeek, prevDone, prevRemaining } = result;
+    const { nextWeek, prevDone, prevRemaining, totalPts } = result;
     if (result.storyUpdates && result.storyUpdates.length > 0) {
       setStories(prev => prev.map(s => {
         if (s.projectId !== project.id) return s;
@@ -4151,12 +4151,13 @@ Keep the tone professional but direct. Format as a clear list per risk. Do not u
       if (p.id !== project.id) return p;
 
       // ── Enforce burndown math regardless of what AI returned ──────────────
+      const safeTotalPts = totalPts || (prevDone + prevRemaining) || 1;
       // velocityActual must be positive and at most what's remaining
-      const clampedVelocity = Math.max(1, Math.min(result.velocityActual || 10, prevRemaining));
+      const clampedVelocity = Math.max(1, Math.min(result.velocityActual || 10, prevRemaining || safeTotalPts));
       // donePoints is strictly cumulative and never exceeds total
-      const clampedDone = Math.min(prevDone + clampedVelocity, totalPts);
+      const clampedDone = Math.min((prevDone || 0) + clampedVelocity, safeTotalPts);
       // remainingPoints must strictly decrease — never >= prevRemaining
-      const clampedRemaining = Math.max(0, totalPts - clampedDone);
+      const clampedRemaining = Math.max(0, safeTotalPts - clampedDone);
 
       const newLog = {
         week: result.week,
