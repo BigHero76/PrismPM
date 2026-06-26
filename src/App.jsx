@@ -1,4 +1,31 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Component } from "react";
+
+// ─── Error Boundary ─────────────────────────────────────────────────────────
+class TabErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  componentDidCatch(e) { console.error("PrismPM tab error:", e); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="bg-red-950/20 border border-red-800/30 rounded-xl p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-red-400 text-lg">⚠</span>
+            <h4 className="text-red-400 font-bold text-sm">Something went wrong rendering this tab</h4>
+          </div>
+          <p className="text-red-300 text-xs font-mono">{this.state.error?.message || "Unknown error"}</p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="px-3 py-1.5 bg-red-800/40 hover:bg-red-700/40 text-red-300 text-xs font-bold rounded-lg transition-all"
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const EY = {
   yellow: "#FFE600",
@@ -10,19 +37,64 @@ const EY = {
 
 // ─── Groq API Helper ────────────────────────────────────────────────────────
 const GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
-const GROQ_RETRIES_PER_MODEL = 1; // automatic retries (rate-limit cooldown OR bigger token budget) before giving up on a model
-const GROQ_MAX_WAIT_SECONDS = 30; // cap how long we'll auto-wait for a retry-after window
-const GROQ_MAX_TOKENS_CEILING = 4000; // never auto-grow the budget past the original blanket default
+const GROQ_RETRIES_PER_MODEL = 1;
+const GROQ_MAX_WAIT_SECONDS = 30;
+const GROQ_MAX_TOKENS_CEILING = 4000;
 
-// Genuine "this model can't be used" signals only — deliberately excludes the
-// bare word "model", since Groq's rate-limit messages also contain "model"
-// (e.g. "Rate limit reached for model `llama-3.1-8b-instant`"), which used to
-// cause rate limits to be misclassified as model-availability issues.
+// ─── Mistral Fallback Config ─────────────────────────────────────────────────
+const MISTRAL_MODELS = ["mistral-small-latest", "open-mistral-7b"];
+const MISTRAL_API_BASE = "https://api.mistral.ai/v1";
+
 const MODEL_UNAVAILABLE_PATTERN = /deprecated|decommissioned|does not exist|not have access|no access|model unavailable|model not found|unsupported model/i;
-
-// Groq's strict JSON mode rejects the response if the model didn't produce
-// complete, valid JSON — most often because max_tokens cut it off mid-object.
 const JSON_TRUNCATION_PATTERN = /failed to generate json|failed_generation/i;
+
+// Helper: call a single Mistral model (OpenAI-compatible endpoint)
+async function callMistralOnce(model, prompt, systemPrompt, key, maxTokens) {
+  const response = await fetch(`${MISTRAL_API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt || "You are an expert project management AI assistant. Always respond with valid JSON only, no markdown, no extra text." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.2,
+      max_tokens: maxTokens,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data.error?.message || data.message || `Mistral request failed (${response.status})`;
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  const text = data.choices?.[0]?.message?.content || "";
+  const clean = text.replace(/```json|```/g, "").trim();
+  try { return JSON.parse(clean); } catch { return { raw: text }; }
+}
+
+// Try Mistral models in sequence; returns parsed JSON or throws
+async function callMistralFallback(prompt, systemPrompt, maxTokens) {
+  const mistralKey = localStorage.getItem("prismpm.mistralApiKey") || import.meta.env.VITE_MISTRAL_API_KEY || "";
+  if (!mistralKey) throw new Error("No Mistral API key set. Add one in AI Setup to enable fallback.");
+  let lastErr = null;
+  for (const model of MISTRAL_MODELS) {
+    try {
+      const result = await callMistralOnce(model, prompt, systemPrompt, mistralKey, maxTokens);
+      console.info(`[PrismPM] Mistral fallback succeeded with ${model}`);
+      return result;
+    } catch (e) {
+      lastErr = e;
+      if (e.status === 429) break; // rate-limited on Mistral too — give up
+    }
+  }
+  throw lastErr || new Error("Mistral fallback failed.");
+}
 
 async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens, forceJson = true) {
   // Groq requires the word "json" to appear in messages when using json_object format.
@@ -74,70 +146,124 @@ async function callGroqOnce(model, prompt, systemPrompt, key, maxTokens, forceJs
 
 async function callGroq(prompt, systemPrompt = "", apiKey = "", maxTokens = 4000, forceJson = true) {
   const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
-  if (!key) {
-    throw new Error("Groq API key is missing. Add it in the BRD Generator panel.");
-  }
 
-  let lastError = null;
-  let effectiveMaxTokens = maxTokens;
+  // ── Try Groq first ──────────────────────────────────────────────────────
+  if (key) {
+    let lastError = null;
+    let effectiveMaxTokens = maxTokens;
 
-  for (const model of GROQ_MODELS) {
-    let attempt = 0;
-    while (attempt <= GROQ_RETRIES_PER_MODEL) {
-      try {
-        return await callGroqOnce(model, prompt, systemPrompt, key, effectiveMaxTokens, forceJson);
-      } catch (e) {
-        lastError = e;
+    for (const model of GROQ_MODELS) {
+      let attempt = 0;
+      while (attempt <= GROQ_RETRIES_PER_MODEL) {
+        try {
+          return await callGroqOnce(model, prompt, systemPrompt, key, effectiveMaxTokens, forceJson);
+        } catch (e) {
+          lastError = e;
 
-        if (e.status === 429) {
-          if (attempt < GROQ_RETRIES_PER_MODEL) {
-            const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
-            const waitSeconds = waitMatch ? parseFloat(waitMatch[1]) : 3;
-            await new Promise(res => setTimeout(res, Math.min(waitSeconds, GROQ_MAX_WAIT_SECONDS) * 1000 + 250));
+          if (e.status === 429) {
+            if (attempt < GROQ_RETRIES_PER_MODEL) {
+              const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
+              const waitSeconds = waitMatch ? parseFloat(waitMatch[1]) : 3;
+              await new Promise(res => setTimeout(res, Math.min(waitSeconds, GROQ_MAX_WAIT_SECONDS) * 1000 + 250));
+              attempt++;
+              continue;
+            }
+            break; // rate-limited and out of retries — try next model
+          }
+
+          if (JSON_TRUNCATION_PATTERN.test(e.message) && attempt < GROQ_RETRIES_PER_MODEL && effectiveMaxTokens < GROQ_MAX_TOKENS_CEILING) {
+            effectiveMaxTokens = Math.min(effectiveMaxTokens * 2, GROQ_MAX_TOKENS_CEILING);
             attempt++;
             continue;
           }
+
+          if (MODEL_UNAVAILABLE_PATTERN.test(e.message) && model !== GROQ_MODELS[GROQ_MODELS.length - 1]) {
+            break; // try next Groq model
+          }
+
+          // Unexpected error — skip to Mistral fallback
+          lastError = e;
           break;
         }
-
-        if (JSON_TRUNCATION_PATTERN.test(e.message) && attempt < GROQ_RETRIES_PER_MODEL && effectiveMaxTokens < GROQ_MAX_TOKENS_CEILING) {
-          effectiveMaxTokens = Math.min(effectiveMaxTokens * 2, GROQ_MAX_TOKENS_CEILING);
-          attempt++;
-          continue;
-        }
-
-        if (MODEL_UNAVAILABLE_PATTERN.test(e.message) && model !== GROQ_MODELS[GROQ_MODELS.length - 1]) {
-          break;
-        }
-
-        throw lastError;
       }
     }
+
+    // ── All Groq models failed — try Mistral ──────────────────────────────
+    const mistralKey = localStorage.getItem("prismpm.mistralApiKey") || import.meta.env.VITE_MISTRAL_API_KEY || "";
+    if (mistralKey) {
+      console.warn("[PrismPM] Groq exhausted, falling back to Mistral...");
+      try {
+        return await callMistralFallback(prompt, systemPrompt, maxTokens);
+      } catch (mistralError) {
+        throw new Error(`Groq failed (${lastError?.message}) and Mistral fallback also failed (${mistralError.message}). Please try again.`);
+      }
+    }
+
+    throw lastError || new Error("Groq request failed and no Mistral API key is configured.");
   }
 
-  throw lastError || new Error("Groq request failed.");
+  // ── No Groq key at all — try Mistral directly ───────────────────────────
+  const mistralKey = localStorage.getItem("prismpm.mistralApiKey") || import.meta.env.VITE_MISTRAL_API_KEY || "";
+  if (mistralKey) {
+    console.info("[PrismPM] No Groq key found, using Mistral directly.");
+    return await callMistralFallback(prompt, systemPrompt, maxTokens);
+  }
+
+  throw new Error("No AI API key found. Add a Groq or Mistral API key in AI Setup.");
 }
 
 // Plain-text variant — no JSON response_format, returns raw string.
+// Falls back to Mistral if Groq fails.
 async function callGroqText(prompt, systemPrompt = "", apiKey = "", maxTokens = 800) {
   const key = apiKey || localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
-  if (!key) throw new Error("No Groq API key found. Add it in AI Setup first.");
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model: GROQ_MODELS[0],
-      messages: [
-        { role: "system", content: systemPrompt || "You are PrismPM Copilot, a concise and actionable AI project management assistant." },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.3,
-      max_tokens: maxTokens,
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || `Groq error ${response.status}`);
-  return data.choices?.[0]?.message?.content?.trim() || "";
+
+  // Try Groq first
+  if (key) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({
+          model: GROQ_MODELS[0],
+          messages: [
+            { role: "system", content: systemPrompt || "You are PrismPM Copilot, a concise and actionable AI project management assistant." },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: maxTokens,
+        }),
+      });
+      const data = await response.json();
+      if (response.ok) return data.choices?.[0]?.message?.content?.trim() || "";
+      // Fall through to Mistral if Groq returned an error
+      console.warn("[PrismPM] Groq text call failed, trying Mistral:", data.error?.message);
+    } catch (e) {
+      console.warn("[PrismPM] Groq text call threw, trying Mistral:", e.message);
+    }
+  }
+
+  // Mistral fallback for plain-text (Copilot)
+  const mistralKey = localStorage.getItem("prismpm.mistralApiKey") || import.meta.env.VITE_MISTRAL_API_KEY || "";
+  if (mistralKey) {
+    const response = await fetch(`${MISTRAL_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${mistralKey}` },
+      body: JSON.stringify({
+        model: MISTRAL_MODELS[0],
+        messages: [
+          { role: "system", content: systemPrompt || "You are PrismPM Copilot, a concise and actionable AI project management assistant." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: maxTokens,
+      }),
+    });
+    const data = await response.json();
+    if (response.ok) return data.choices?.[0]?.message?.content?.trim() || "";
+    throw new Error(data.error?.message || `Mistral error ${response.status}`);
+  }
+
+  throw new Error("No AI API key found. Add a Groq or Mistral API key in AI Setup.");
 }
 
 // ─── Seed Data ──────────────────────────────────────────────────────────────
@@ -3217,13 +3343,20 @@ BUDGET REASONING: ${brd.budgetReasoning || "N/A"}
           </div>
         </div>
 
-        {/* API Key */}
-        <div>
-          <label className="text-slate-400 text-xs uppercase mb-1 block">Groq API Key</label>
-          <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Paste Groq API Key..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+        {/* API Keys */}
+        <div className="grid md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1 block">Groq API Key <span className="text-slate-600 normal-case">(primary)</span></label>
+            <input type="password" value={apiKey} onChange={e => { setApiKey(e.target.value); if (e.target.value) localStorage.setItem("prismpm.groqApiKey", e.target.value); }} placeholder="Paste Groq key..." className="w-full bg-black border border-white/20 rounded-lg px-3 py-2 text-xs text-white" />
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs uppercase mb-1 block">Mistral API Key <span className="text-slate-600 normal-case">(fallback)</span></label>
+            <input type="password" defaultValue={localStorage.getItem("prismpm.mistralApiKey") || ""} onChange={e => { if (e.target.value) localStorage.setItem("prismpm.mistralApiKey", e.target.value); else localStorage.removeItem("prismpm.mistralApiKey"); }} placeholder="Paste Mistral key..." className="w-full bg-black border border-white/15 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-700" />
+          </div>
         </div>
+        <p className="text-[9px] text-slate-600">Groq is used first. If rate-limited, PrismPM automatically switches to Mistral.</p>
 
-        <button onClick={generateBRD} disabled={loading || !form.problem || !form.goal || !apiKey} className="w-full py-2.5 bg-[#FFE600] disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all">
+        <button onClick={generateBRD} disabled={loading || !form.problem || !form.goal || (!apiKey && !localStorage.getItem("prismpm.mistralApiKey"))} className="w-full py-2.5 bg-[#FFE600] disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all">
           {loading ? "Generating specifications..." : "✦ AI Generate Specs"}
         </button>
       </div>
@@ -4757,6 +4890,7 @@ Return ONLY this JSON:
 
       {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
       {subTab === "analytics" && (
+        <TabErrorBoundary>
         <div className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
 
@@ -4770,66 +4904,51 @@ Return ONLY this JSON:
                 {!hasWeeklyData ? (
                   <div className="flex items-center justify-center h-48 text-slate-500 text-xs">No data yet — simulate a week first.</div>
                 ) : (() => {
-                  const logs = project.weeklyLogs.slice(0, selectedWeek);
+                  try {
+                  const logs = project.weeklyLogs.slice(0, selectedWeek).filter(l => l && typeof l.remainingPoints === "number");
+                  if (logs.length === 0) return <div className="flex items-center justify-center h-48 text-slate-500 text-xs">No valid log data yet.</div>;
                   const W = 300, H = 160, PL = 32, PT = 10, PB = 24, PR = 10;
                   const chartW = W - PL - PR, chartH = H - PT - PB;
-                  const maxPts = Math.max(...logs.map(l => l.donePoints + l.remainingPoints)) || 1;
+                  const maxPts = Math.max(...logs.map(l => (l.donePoints || 0) + (l.remainingPoints || 0)), 1);
                   const pts = logs.map((l, i) => {
                     const x = PL + (i / Math.max(logs.length - 1, 1)) * chartW;
-                    const remaining = l.remainingPoints;
+                    const remaining = l.remainingPoints || 0;
                     const y = PT + (1 - remaining / maxPts) * chartH;
                     return { x, y, log: l };
                   });
                   const idealStart = { x: PL, y: PT };
                   const idealEnd = { x: PL + chartW, y: PT + chartH };
-
-                  // Projection line from last actual point
                   const last = pts[pts.length - 1];
                   const projEnd = last && avgWeeklyVelocity > 0
-                    ? { x: last.x + (last.log.remainingPoints / avgWeeklyVelocity) * (chartW / Math.max(logs.length, 1)), y: PT + chartH }
+                    ? { x: last.x + ((last.log.remainingPoints || 0) / avgWeeklyVelocity) * (chartW / Math.max(logs.length, 1)), y: PT + chartH }
                     : null;
-
                   return (
                     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ cursor: "crosshair" }}>
-                      {/* Grid lines */}
                       {[0, 0.25, 0.5, 0.75, 1].map(r => (
                         <g key={r}>
                           <line x1={PL} y1={PT + r * chartH} x2={PL + chartW} y2={PT + r * chartH} stroke="#222" strokeWidth="1" />
                           <text x={PL - 3} y={PT + r * chartH + 3} fill="#555" fontSize="6" textAnchor="end">{Math.round(maxPts * (1 - r))}</text>
                         </g>
                       ))}
-                      {/* X axis labels */}
                       {logs.map((l, i) => (
                         <text key={i} x={PL + (i / Math.max(logs.length - 1, 1)) * chartW} y={H - 6} fill="#555" fontSize="6" textAnchor="middle">W{l.week}</text>
                       ))}
-                      {/* Axes */}
                       <line x1={PL} y1={PT} x2={PL} y2={PT + chartH} stroke="#333" strokeWidth="1" />
                       <line x1={PL} y1={PT + chartH} x2={PL + chartW} y2={PT + chartH} stroke="#333" strokeWidth="1" />
-                      {/* Ideal line */}
                       <line x1={idealStart.x} y1={idealStart.y} x2={idealEnd.x} y2={idealEnd.y} stroke="#444" strokeDasharray="3,3" strokeWidth="1.5" />
                       <text x={idealEnd.x - 2} y={idealEnd.y - 3} fill="#444" fontSize="6" textAnchor="end">Ideal</text>
-                      {/* Projection line */}
                       {projEnd && last && (
                         <line x1={last.x} y1={last.y} x2={Math.min(projEnd.x, PL + chartW + 30)} y2={projEnd.y}
                           stroke="#ef4444" strokeDasharray="4,3" strokeWidth="1.5" opacity="0.7" />
                       )}
-                      {/* Area fill */}
                       {pts.length > 1 && (
-                        <polygon
-                          points={`${PL},${PT + chartH} ${pts.map(p => `${p.x},${p.y}`).join(" ")} ${pts[pts.length-1].x},${PT + chartH}`}
-                          fill="#FFE600" opacity="0.07"
-                        />
+                        <polygon points={`${PL},${PT + chartH} ${pts.map(p => `${p.x},${p.y}`).join(" ")} ${pts[pts.length-1].x},${PT + chartH}`} fill="#FFE600" opacity="0.07" />
                       )}
-                      {/* Actual line */}
                       {pts.length > 1 && (
-                        <polyline fill="none" stroke="#FFE600" strokeWidth="2.5"
-                          points={pts.map(p => `${p.x},${p.y}`).join(" ")}
-                          strokeLinejoin="round" strokeLinecap="round"
-                        />
+                        <polyline fill="none" stroke="#FFE600" strokeWidth="2.5" points={pts.map(p => `${p.x},${p.y}`).join(" ")} strokeLinejoin="round" strokeLinecap="round" />
                       )}
-                      {/* Hover dots with tooltips */}
                       {pts.map((p, i) => (
-                        <g key={i} className="group">
+                        <g key={i}>
                           <circle cx={p.x} cy={p.y} r="8" fill="transparent" />
                           <circle cx={p.x} cy={p.y} r="3.5" fill="#FFE600" stroke="#000" strokeWidth="1.5" />
                           <g opacity="0" style={{ transition: "opacity 0.15s" }}
@@ -4838,19 +4957,18 @@ Return ONLY this JSON:
                             <rect x={Math.min(p.x - 28, W - 72)} y={p.y - 36} width={64} height={28} rx="4" fill="#1a1a1a" stroke="#FFE600" strokeWidth="0.5" />
                             <text x={Math.min(p.x, W - 40)} y={p.y - 24} fill="#FFE600" fontSize="7" textAnchor="middle" fontWeight="bold">W{p.log.week}</text>
                             <text x={Math.min(p.x, W - 40)} y={p.y - 14} fill="#aaa" fontSize="6" textAnchor="middle">{p.log.remainingPoints} pts left</text>
-                            <text x={Math.min(p.x, W - 40)} y={p.y - 6} fill={p.log.delayDays > 0 ? "#ef4444" : "#22c55e"} fontSize="6" textAnchor="middle">{p.log.delayDays > 0 ? `+${p.log.delayDays}d delay` : "On track"}</text>
+                            <text x={Math.min(p.x, W - 40)} y={p.y - 6} fill={(p.log.delayDays || 0) > 0 ? "#ef4444" : "#22c55e"} fontSize="6" textAnchor="middle">{(p.log.delayDays || 0) > 0 ? `+${p.log.delayDays}d delay` : "On track"}</text>
                           </g>
                         </g>
                       ))}
                       <text x={PL} y={PT + chartH + 18} fill="#555" fontSize="6">← Weeks →</text>
-                      <text x={PL - 4} y={PT} fill="#555" fontSize="6" textAnchor="middle" transform={`rotate(-90, ${PL - 14}, ${PT + chartH / 2})`}>Pts Remaining</text>
                     </svg>
                   );
+                  } catch(e) {
+                    return <div className="flex items-center justify-center h-48 text-red-400 text-xs">Chart error: {e.message}</div>;
+                  }
                 })()}
               </div>
-              {hasWeeklyData && projEnd !== undefined && predictedDelayWeeks > 0 && (
-                <p className="text-[10px] text-red-400">🔴 Projection (red dashed) shows ~{predictedDelayWeeks}wk overrun at current pace</p>
-              )}
             </div>
 
             {/* Interactive Velocity Chart */}
@@ -4863,15 +4981,16 @@ Return ONLY this JSON:
                 {!hasWeeklyData ? (
                   <div className="flex items-center justify-center h-48 text-slate-500 text-xs">No data yet — simulate a week first.</div>
                 ) : (() => {
-                  const logs = project.weeklyLogs.slice(0, selectedWeek);
+                  try {
+                  const logs = project.weeklyLogs.slice(0, selectedWeek).filter(l => l);
+                  if (logs.length === 0) return <div className="flex items-center justify-center h-48 text-slate-500 text-xs">No log data yet.</div>;
                   const W = 300, H = 160, PL = 30, PT = 10, PB = 24;
                   const chartW = W - PL - 10, chartH = H - PT - PB;
-                  const maxPts = Math.max(...logs.map(l => Math.max(l.velocityTarget || 0, l.velocityActual || 0)), 1);
+                  const maxPts = Math.max(...logs.map(l => Math.max(Number(l.velocityTarget) || 0, Number(l.velocityActual) || 0)), 1);
                   const barGroupW = chartW / logs.length;
                   const barW = Math.min(14, barGroupW * 0.38);
-
                   return (
-                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ cursor: "default" }}>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
                       {[0, 0.25, 0.5, 0.75, 1].map(r => (
                         <g key={r}>
                           <line x1={PL} y1={PT + r * chartH} x2={W - 10} y2={PT + r * chartH} stroke="#222" strokeWidth="1" />
@@ -4880,47 +4999,33 @@ Return ONLY this JSON:
                       ))}
                       <line x1={PL} y1={PT} x2={PL} y2={PT + chartH} stroke="#333" strokeWidth="1" />
                       <line x1={PL} y1={PT + chartH} x2={W - 10} y2={PT + chartH} stroke="#333" strokeWidth="1" />
-                      {/* Avg velocity line */}
                       {avgWeeklyVelocity > 0 && (
                         <>
-                          <line x1={PL} y1={PT + (1 - avgWeeklyVelocity / maxPts) * chartH}
-                            x2={W - 10} y2={PT + (1 - avgWeeklyVelocity / maxPts) * chartH}
-                            stroke="#60a5fa" strokeDasharray="3,3" strokeWidth="1" opacity="0.6" />
+                          <line x1={PL} y1={PT + (1 - avgWeeklyVelocity / maxPts) * chartH} x2={W - 10} y2={PT + (1 - avgWeeklyVelocity / maxPts) * chartH} stroke="#60a5fa" strokeDasharray="3,3" strokeWidth="1" opacity="0.6" />
                           <text x={W - 12} y={PT + (1 - avgWeeklyVelocity / maxPts) * chartH - 2} fill="#60a5fa" fontSize="6" textAnchor="end">avg</text>
                         </>
                       )}
                       {logs.map((log, idx) => {
                         const cx = PL + (idx + 0.5) * barGroupW;
-                        const targetH = (log.velocityTarget / maxPts) * chartH;
-                        const actualH = (log.velocityActual / maxPts) * chartH;
+                        const vTarget = Number(log.velocityTarget) || 0;
+                        const vActual = Number(log.velocityActual) || 0;
+                        const targetH = Math.max(0, (vTarget / maxPts) * chartH);
+                        const actualH = Math.max(0, (vActual / maxPts) * chartH);
                         const isSelected = log.week === selectedWeek;
                         return (
-                          <g key={log.week} className="group">
-                            {/* Target bar */}
-                            <rect x={cx - barW - 1} y={PT + chartH - targetH} width={barW} height={targetH}
-                              fill={isSelected ? "#4a4a00" : "#2a2a2a"} rx="2"
-                              stroke={isSelected ? "#FFE600" : "transparent"} strokeWidth="0.5" />
-                            {/* Actual bar */}
-                            <rect x={cx + 1} y={PT + chartH - actualH} width={barW} height={actualH}
-                              fill={log.velocityActual >= log.velocityTarget ? "#22c55e" : "#FFE600"} rx="2" opacity="0.9" />
-                            {/* Week label */}
+                          <g key={log.week || idx}>
+                            <rect x={cx - barW - 1} y={PT + chartH - targetH} width={barW} height={targetH} fill={isSelected ? "#4a4a00" : "#2a2a2a"} rx="2" stroke={isSelected ? "#FFE600" : "transparent"} strokeWidth="0.5" />
+                            <rect x={cx + 1} y={PT + chartH - actualH} width={barW} height={actualH} fill={vActual >= vTarget ? "#22c55e" : "#FFE600"} rx="2" opacity="0.9" />
                             <text x={cx} y={H - 6} fill={isSelected ? "#FFE600" : "#555"} fontSize="6" textAnchor="middle">W{log.week}</text>
-                            {/* Hover tooltip */}
-                            <rect x={cx - barW - 1} y={PT + chartH - Math.max(targetH, actualH) - 1} width={barW * 2 + 2} height={Math.max(targetH, actualH) + 1} fill="transparent"
-                              onMouseEnter={e => e.currentTarget.nextElementSibling.style.opacity = 1}
-                              onMouseLeave={e => e.currentTarget.nextElementSibling.style.opacity = 0} />
-                            <g style={{ opacity: 0, transition: "opacity 0.15s", pointerEvents: "none" }}>
-                              <rect x={Math.min(cx - 32, W - 70)} y={PT} width={68} height={36} rx="4" fill="#1a1a1a" stroke="#FFE600" strokeWidth="0.5" />
-                              <text x={Math.min(cx + 2, W - 35)} y={PT + 11} fill="#FFE600" fontSize="7" textAnchor="middle" fontWeight="bold">Week {log.week}</text>
-                              <text x={Math.min(cx + 2, W - 35)} y={PT + 21} fill="#aaa" fontSize="6" textAnchor="middle">Target: {log.velocityTarget}pts</text>
-                              <text x={Math.min(cx + 2, W - 35)} y={PT + 30} fill={log.velocityActual >= log.velocityTarget ? "#22c55e" : "#FFE600"} fontSize="6" textAnchor="middle">Actual: {log.velocityActual}pts</text>
-                            </g>
                           </g>
                         );
                       })}
-                      <text x={PL + chartW / 2} y={H - 1} fill="#444" fontSize="6" textAnchor="middle">■ Target &nbsp;&nbsp; ■ Actual</text>
+                      <text x={PL + chartW / 2} y={H - 1} fill="#444" fontSize="6" textAnchor="middle">■ Target  ■ Actual</text>
                     </svg>
                   );
+                  } catch(e) {
+                    return <div className="flex items-center justify-center h-48 text-red-400 text-xs">Chart error: {e.message}</div>;
+                  }
                 })()}
               </div>
               {hasWeeklyData && (
@@ -4955,9 +5060,10 @@ Return ONLY this JSON:
                 </div>
               </div>
             ) : (() => {
+              try {
               const totalWeeks = project.weeklyLogs.length;
               const plannedWeeks = Math.ceil((project.plannedDays || 90) / 7);
-              const displayWeeks = Math.max(totalWeeks, plannedWeeks);
+              const displayWeeks = Math.max(totalWeeks, plannedWeeks, 1);
               const COL_W = 44, ROW_H = 34, LABEL_W = 150, SPRINT_H = 20, WEEK_H = 18;
               const sprintList = sprints.filter(sp => sp.projectId === project.id);
 
@@ -4965,7 +5071,7 @@ Return ONLY this JSON:
                 const src = storyId
                   ? projectStories.filter(s => s.id === storyId)
                   : projectStories.filter(s => s.epicId === epicId);
-                if (!src.length) return { start: 1, end: Math.min(2, totalWeeks) };
+                if (!src.length) return { start: 1, end: Math.max(1, Math.min(2, totalWeeks)) };
                 let start = Infinity, end = 0;
                 src.forEach(s => {
                   const spIdx = sprintList.findIndex(sp => sp.id === s.sprintId);
@@ -4975,8 +5081,8 @@ Return ONLY this JSON:
                     if (ew > end) end = ew;
                   }
                 });
-                if (!isFinite(start)) return { start: 1, end: Math.min(2, totalWeeks) };
-                return { start: Math.max(1, start), end: Math.min(displayWeeks, end) };
+                if (!isFinite(start) || end < start) return { start: 1, end: Math.max(1, Math.min(2, displayWeeks)) };
+                return { start: Math.max(1, start), end: Math.min(displayWeeks, Math.max(start, end)) };
               };
 
               const svgH = SPRINT_H + WEEK_H + projectEpics.length * ROW_H + 28;
@@ -5044,7 +5150,7 @@ Return ONLY this JSON:
                       const hasDelay = project.weeklyLogs.slice(start - 1, end).some(l => l.delayDays > 0);
                       const barColor = isComplete ? "#22c55e" : hasDelay ? "#ef4444" : isActive ? "#FFE600" : "#60a5fa";
                       const barX = LABEL_W + (start - 1) * COL_W + 4;
-                      const barW = (end - start + 1) * COL_W - 8;
+                      const barW = Math.max(8, (end - start + 1) * COL_W - 8);
                       const barY = rowY + 8;
                       const barH = 18;
 
@@ -5125,6 +5231,9 @@ Return ONLY this JSON:
                   </svg>
                 </div>
               );
+            } catch(e) {
+              return <div className="bg-red-950/20 border border-red-800/30 rounded-lg p-4 text-red-400 text-xs">Timeline error: {e.message}</div>;
+            }
             })()}
 
             {/* Summary row below timeline */}
@@ -5139,10 +5248,12 @@ Return ONLY this JSON:
             )}
           </div>
         </div>
+        </TabErrorBoundary>
       )}
 
       {/* Risks heatmap & list */}
       {subTab === "risks" && (
+        <TabErrorBoundary>
         <div className="space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
@@ -5302,6 +5413,7 @@ Return ONLY this JSON:
             </div>
           </div>
         </div>
+        </TabErrorBoundary>
       )}
 
       {/* Audit Log tab */}
@@ -5446,15 +5558,31 @@ Return ONLY this JSON:
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400">Groq API Key:</span>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              placeholder="Paste Groq API Key..."
-              className="bg-black border border-white/20 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
-            />
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400 w-28 shrink-0">Groq API Key:</span>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={e => { setApiKey(e.target.value); if (e.target.value) localStorage.setItem("prismpm.groqApiKey", e.target.value); }}
+                placeholder="Paste Groq key (primary)..."
+                className="flex-1 bg-black border border-white/20 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#FFE600]"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400 w-28 shrink-0">
+                Mistral Key:
+                <span className="text-[9px] text-slate-600 block">fallback</span>
+              </span>
+              <input
+                type="password"
+                defaultValue={localStorage.getItem("prismpm.mistralApiKey") || ""}
+                onChange={e => { if (e.target.value) localStorage.setItem("prismpm.mistralApiKey", e.target.value); else localStorage.removeItem("prismpm.mistralApiKey"); }}
+                placeholder="Paste Mistral key (optional fallback)..."
+                className="flex-1 bg-black border border-white/15 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#FFE600]/50 placeholder-slate-700"
+              />
+            </div>
+            <p className="text-[9px] text-slate-600 pl-1">If Groq hits rate limits, PrismPM automatically retries using Mistral.</p>
           </div>
           {apiLoading ? (
             <Spinner />
