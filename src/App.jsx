@@ -4006,6 +4006,20 @@ Return ONLY this JSON (no markdown, no extra text):
       alert("Please upload a document or paste requirements text in the AI Setup tab before simulating."); return;
     }
 
+    // Block simulation until PM + BA + at least 2 additional members are assigned (minimum 4 total)
+    const currentTeam = project.team || [];
+    const hasPM = currentTeam.some(m => m.role === "PM");
+    const hasBA = currentTeam.some(m => m.role === "BA");
+    const otherMembers = currentTeam.filter(m => m.role !== "PM" && m.role !== "BA");
+    if (!hasPM || !hasBA || otherMembers.length < 2) {
+      const missing = [];
+      if (!hasPM) missing.push("a PM");
+      if (!hasBA) missing.push("a BA");
+      if (otherMembers.length < 2) missing.push(`${2 - otherMembers.length} more team member${2 - otherMembers.length > 1 ? "s" : ""}`);
+      alert(`Team not ready for simulation.\n\nYou need: PM + BA + at least 2 additional members (minimum 4 total).\n\nCurrently missing: ${missing.join(", ")}.\n\nGo to the Team tab to add members from the roster.`);
+      return;
+    }
+
     const totalPts = projectStoryList.reduce((sum, s) => sum + (s.points || 0), 0);
     const prevLog = existingLogs[existingLogs.length - 1] || null;
     const prevDone = prevLog ? prevLog.donePoints : 0;
