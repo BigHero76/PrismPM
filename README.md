@@ -1,138 +1,184 @@
-# PrismPM 🚀
+# PRISM — AI-Powered Project Management Platform
 
-PrismPM is an AI-powered Project Management platform designed to help Project Managers, Business Analysts, and development teams streamline planning, documentation, and project execution.
-
-Built as a practical prototype, PrismPM demonstrates how Artificial Intelligence can be integrated into real-world project management workflows to reduce manual effort, improve planning accuracy, and accelerate decision-making.
-
-## ✨ Features
-
-### 📄 AI BRD Generator
-
-Generate Business Requirement Documents (BRDs) from simple project descriptions.
-
-* Converts project ideas into structured requirements
-* Reduces documentation effort
-* Helps Business Analysts create project artifacts faster
-
-### 📅 AI Timeline Prediction
-
-Predict project timelines based on project scope and requirements.
-
-* Estimates project duration
-* Assists project planning
-* Supports resource allocation decisions
-
-### 🤖 AI-Powered Project Assistance
-
-Leverages AI to automate repetitive project management tasks and improve productivity.
-
-### 📊 Modern Dashboard
-
-Clean and intuitive interface built for project teams.
-
-* Easy navigation
-* Project overview
-* AI-driven workflow support
+PRISM is a dark-themed, AI-driven project management tool built for teams that want intelligent weekly simulations, predictive analytics, sprint tracking, and a full audit trail — all in a single React app.
 
 ---
 
-## 🛠 Tech Stack
+## Features
 
-### Frontend
+**Dashboard**
+- Portfolio-level KPIs: active projects, risk exposure, stories complete, budget utilisation, avg velocity, schedule impact
+- Colour-coded project cards (green / amber / red border by status)
+- AI Weekly Portfolio Summary generator
+- Per-project delay badges and velocity indicators
 
-* React
-* Vite
-* Tailwind CSS
+**Project Detail**
+- Sticky subtab navigation: Overview · Team · Analytics · Risks · AI Setup · Audit Log
+- Execution timeline with week-by-week simulation
+- Delay prediction banner (calculates projected overrun from actual velocity)
+- AI Smart Weekly Summary bullets (tasks done, delays, risks) auto-generated after each simulated week
 
-### Development Tools
+**AI Setup & Simulation**
+- Upload a PDF or Word document, or paste raw requirements text
+- AI generates Epics, Sprints, User Stories, Tasks, and Risks in one click (powered by Groq)
+- Week-by-week simulation with a human review step before applying
+- Burndown math enforced in code — remaining points always strictly decrease
+- Requires PM + BA + minimum 2 additional team members before simulation unlocks
 
-* JavaScript
-* ESLint
-* Git & GitHub
+**Analytics (Interactive Charts)**
+- Sprint Burndown chart with hover tooltips, ideal line, and red projection line for delays
+- Sprint Velocity chart with paired target/actual bars, hover tooltips, and avg velocity line
+- Interactive Gantt chart — click any epic row to expand individual story bars; sprint headers, current-week marker, delay extensions shown in red
+
+**Team**
+- Add and drop members per project from a shared employee roster
+- Weekly activity breakdown per team member
+- Compatibility scoring
+
+**Risks**
+- 5×5 heatmap (click cells to filter)
+- Risk list with severity, mitigation, and owner
+- Risks only surface after at least one week is simulated
+
+**Manual Override Audit Log**
+- Every manual edit to an AI-generated value is logged with original vs corrected value
+- Scoped per project — no bleed between projects
+- Cleared on every new login (fresh session = clean slate)
+- Password-protected "Clear Log" button (`password`)
+
+**Agile Board**
+- Kanban board with drag-and-drop story status changes (logged to audit)
+- Full sprint and epic management
 
 ---
 
-## 🎯 Problem Statement
+## Tech Stack
 
-Project Managers and Business Analysts spend significant time creating documentation, estimating timelines, and managing project planning activities.
-
-PrismPM aims to address these challenges by using AI to:
-
-* Automate documentation generation
-* Improve planning efficiency
-* Reduce manual effort
-* Enable faster project initiation
-
----
-
-## 🚀 Future Enhancements
-
-* Risk Prediction Engine
-* AI Meeting Minutes Generator
-* Requirement Traceability Matrix Generator
-* Sprint Planning Assistant
-* Resource Allocation Recommendations
-* Project Health Monitoring Dashboard
-* Jira / Trello Integration
-* Multi-project Analytics
+| Layer | Tech |
+|---|---|
+| Framework | React 18 (Vite) |
+| Styling | Tailwind CSS |
+| AI | Groq API (`llama3-8b-8192` / `mixtral`) |
+| Charts | Custom SVG (no chart library dependency) |
+| Persistence | localStorage |
+| Build | Vite |
 
 ---
 
-## 🏗 Installation
+## Getting Started
 
-Clone the repository:
+### Prerequisites
+
+- Node.js 18+
+- A [Groq API key](https://console.groq.com) (free tier works fine)
+
+### Clone & Install
 
 ```bash
-git clone https://github.com/BigHero76/PrismPM.git
-```
-
-Navigate to the project directory:
-
-```bash
-cd PrismPM
-```
-
-Install dependencies:
-
-```bash
+git clone https://github.com/your-username/prism-pm.git
+cd prism-pm
 npm install
 ```
 
-Run the development server:
+### Environment Setup
+
+Create a `.env` file in the project root:
+
+```bash
+VITE_GROQ_API_KEY=your_groq_api_key_here
+```
+
+> You can also paste your Groq key directly in the app's AI Setup tab — it gets saved to localStorage and persists across sessions.
+
+### Run Locally
 
 ```bash
 npm run dev
 ```
 
----
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-## 📚 Use Case
+### Build for Production
 
-PrismPM is designed for:
-
-* Project Managers
-* Business Analysts
-* Product Owners
-* Development Teams
-* Students learning AI applications in Project Management
+```bash
+npm run build
+npm run preview
+```
 
 ---
 
-## 🤝 Contributing
+## Project Structure
 
-Contributions, suggestions, and feedback are welcome.
+```
+prism-pm/
+├── src/
+│   └── App.jsx          # Entire application (single-file architecture)
+├── public/
+├── index.html
+├── vite.config.js
+├── tailwind.config.js
+├── package.json
+└── .env                 # VITE_GROQ_API_KEY (not committed)
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Open a Pull Request
+> PRISM uses a single-file architecture — all components, state, and logic live in `App.jsx`. This was an intentional choice for rapid iteration and demo purposes.
 
 ---
 
-## 📄 License
+## How to Use
 
-This project is licensed under the MIT License.
+### 1. Login
+Click the login button to start a fresh session. The audit log is wiped on each login.
+
+### 2. Create a Project
+Go to **Dashboard → + New Project** and fill in the project details.
+
+### 3. Set Up with AI
+Navigate into the project → **⚡ AI Setup** tab. Paste your requirements or upload a document, then click **Run AI Generator**. This creates Epics, Sprints, Stories, Tasks, and Risks automatically.
+
+### 4. Build Your Team
+Go to the **Team** tab and add members from the roster. You need at minimum:
+- 1 PM
+- 1 BA
+- 2 additional team members
+
+Simulation is blocked until this requirement is met.
+
+### 5. Simulate Weeks
+Back on **Overview**, click **Simulate Week**. The AI runs a weekly simulation, you review and optionally edit the results, then apply. Repeat each week.
+
+### 6. Track Progress
+- **Analytics** tab: burndown, velocity, and Gantt (hover/click for details)
+- **Overview**: delay prediction banner and AI weekly summary
+- **Risks** tab: heatmap and risk list (populated after simulation)
+- **Audit Log**: full history of every manual override you made
 
 ---
 
-### Built with AI for smarter Project Management.
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `VITE_GROQ_API_KEY` | Your Groq API key. Can also be set in-app via AI Setup tab. |
+
+---
+
+## Known Limitations
+
+- Single-file architecture means the bundle is large; not optimised for production scale
+- No backend — all state is localStorage (clears on browser data wipe)
+- Groq free tier has rate limits; heavy simulation usage may hit them
+
+---
+
+## Audit Log Password
+
+The Manual Override Audit Log clear button requires the password: **`password`**
+
+(This is intentionally simple for demo purposes — swap it out before any real deployment.)
+
+---
+
+## License
+
+MIT
