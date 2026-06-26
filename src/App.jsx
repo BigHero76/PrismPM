@@ -809,14 +809,6 @@ Return ONLY this JSON (no markdown):
   useEffect(() => {
     if (!projects.length) return;
     const nextProjects = projects.map(p => {
-      // Don't calculate progress from story statuses until at least one week has been simulated.
-      // Before simulation, seed data story statuses are meaningless for progress display.
-      const hasSimulated = (p.weeklyLogs || []).length > 0;
-      if (!hasSimulated) {
-        if (p.progress !== 0) return { ...p, progress: 0, status: "On Track" };
-        return p;
-      }
-
       const projStories = stories.filter(s => s.projectId === p.id);
       if (projStories.length === 0) return { ...p, progress: 0 };
       const totalPoints = projStories.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
@@ -830,7 +822,7 @@ Return ONLY this JSON (no markdown):
       let newStatus = p.status;
       if (calculatedProgress >= 100) newStatus = "Completed";
       else if (calculatedProgress > 0 && p.status === "On Track") newStatus = "In Progress";
-      else if (calculatedProgress === 0) newStatus = "On Track";
+      else if (calculatedProgress === 0) newStatus = p.weeklyLogs?.length > 0 ? p.status : "On Track";
 
       if (p.progress !== calculatedProgress || p.status !== newStatus) {
         return { ...p, progress: calculatedProgress, status: newStatus };
@@ -4014,20 +4006,6 @@ Return ONLY this JSON (no markdown, no extra text):
       alert("Please upload a document or paste requirements text in the AI Setup tab before simulating."); return;
     }
 
-    // Block simulation until PM, BA, and at least 2 additional members are assigned (minimum 4)
-    const currentTeam = project.team || [];
-    const hasPM = currentTeam.some(m => m.role === "PM");
-    const hasBA = currentTeam.some(m => m.role === "BA");
-    const otherMembers = currentTeam.filter(m => m.role !== "PM" && m.role !== "BA");
-    if (!hasPM || !hasBA || otherMembers.length < 2) {
-      const missing = [];
-      if (!hasPM) missing.push("a PM");
-      if (!hasBA) missing.push("a BA");
-      if (otherMembers.length < 2) missing.push(`${2 - otherMembers.length} more team member${2 - otherMembers.length > 1 ? "s" : ""}`);
-      alert(`Team not ready for simulation.\n\nYou need: PM + BA + at least 2 additional members (minimum 4 total).\n\nCurrently missing: ${missing.join(", ")}.\n\nGo to the Team tab to add members from the roster.`);
-      return;
-    }
-
     const totalPts = projectStoryList.reduce((sum, s) => sum + (s.points || 0), 0);
     const prevLog = existingLogs[existingLogs.length - 1] || null;
     const prevDone = prevLog ? prevLog.donePoints : 0;
@@ -4068,16 +4046,23 @@ Return ONLY this JSON:
 {
   "week": ${nextWeek},
   "label": "Week ${nextWeek}",
-  "donePoints": <cumulative points done including this week>,
-  "remainingPoints": <points still left after this week>,
+  "donePoints": <cumulative points done including this week — MUST be >= ${prevDone} and <= ${totalPts}>,
+  "remainingPoints": <points still left after this week — MUST be exactly ${totalPts} minus donePoints, and MUST be strictly less than ${prevRemaining}>,
   "delayDays": <0 if on track, positive number if behind>,
   "velocityTarget": <expected points this week>,
-  "velocityActual": <actual points completed this week>,
-  "burndownPoints": [<7 daily values, starting from remaining at week start, ending at remaining after week>],
+  "velocityActual": <actual points completed this week — MUST equal donePoints minus ${prevDone}>,
+  "burndownPoints": [<7 daily values, starting from ${prevRemaining}, strictly decreasing each day, ending at remainingPoints>],
   "risks": [<array of risk strings that surfaced this week, can be empty>],
   "storyUpdates": [{ "title": "<story title>", "status": "In Progress" | "Done" }],
   "weekSummary": "<2-3 sentence natural language summary of what happened this week>"
-}`;
+}
+
+CRITICAL MATH RULES — violating these will break the simulation:
+- donePoints = ${prevDone} + velocityActual  (cumulative, never decreases)
+- remainingPoints = ${totalPts} - donePoints  (always = total minus done)
+- remainingPoints MUST be strictly less than ${prevRemaining}  (work always gets done)
+- velocityActual MUST be between 5 and 20 points
+- burndownPoints array MUST start near ${prevRemaining} and end at remainingPoints, strictly non-increasing`;
 
       const result = await callGroq(prompt, "You are an expert agile project manager AI. Always respond with valid JSON only.", key, 2500);
 
@@ -4088,8 +4073,17 @@ Return ONLY this JSON:
       }
 
       if (result && result.week) {
-        // Show review modal instead of immediately applying
-        setPendingSimResult({ ...result, nextWeek, prevDone, prevRemaining, totalPts });
+        // Clamp math before showing review modal so reviewer sees accurate numbers
+        const clampedVelocity = Math.max(1, Math.min(result.velocityActual || 10, prevRemaining));
+        const clampedDone = Math.min(prevDone + clampedVelocity, totalPts);
+        const clampedRemaining = Math.max(0, totalPts - clampedDone);
+        const clampedResult = {
+          ...result,
+          velocityActual: clampedVelocity,
+          donePoints: clampedDone,
+          remainingPoints: clampedRemaining,
+        };
+        setPendingSimResult({ ...clampedResult, nextWeek, prevDone, prevRemaining, totalPts, projectId: project.id });
         setShowSimReview(true);
       } else {
         alert("AI returned an unexpected response. Please try again.");
@@ -4155,14 +4149,23 @@ Keep the tone professional but direct. Format as a clear list per risk. Do not u
     }
     setProjects(prev => prev.map(p => {
       if (p.id !== project.id) return p;
+
+      // ── Enforce burndown math regardless of what AI returned ──────────────
+      // velocityActual must be positive and at most what's remaining
+      const clampedVelocity = Math.max(1, Math.min(result.velocityActual || 10, prevRemaining));
+      // donePoints is strictly cumulative and never exceeds total
+      const clampedDone = Math.min(prevDone + clampedVelocity, totalPts);
+      // remainingPoints must strictly decrease — never >= prevRemaining
+      const clampedRemaining = Math.max(0, totalPts - clampedDone);
+
       const newLog = {
         week: result.week,
         label: result.label || `Week ${nextWeek}`,
-        donePoints: result.donePoints || prevDone,
-        remainingPoints: result.remainingPoints ?? prevRemaining,
+        donePoints: clampedDone,
+        remainingPoints: clampedRemaining,
         delayDays: result.delayDays || 0,
         velocityTarget: result.velocityTarget || 10,
-        velocityActual: result.velocityActual || 0,
+        velocityActual: clampedVelocity,
         burndownPoints: result.burndownPoints || [],
         risks: result.risks || [],
         weekSummary: result.weekSummary || ""
