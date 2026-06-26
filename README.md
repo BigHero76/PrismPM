@@ -167,7 +167,7 @@ prism-pm/
 ├── vite.config.js
 ├── tailwind.config.js
 ├── package.json
-├── .env                  # API keys (never commit this)
+├── .env                  
 └── .env.example          # Template for contributors
 ```
 
