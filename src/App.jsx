@@ -1056,7 +1056,7 @@ Return ONLY this JSON (no markdown):
                       : selectedProject?.name || "Project"}
                   </h1>
                   <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                    {tab === "dashboard" ? `${projects.length} projects · ${risks.filter(r => r.severity === "Critical").length} critical risks` 
+                    {tab === "dashboard" ? `${projects.length} projects · ${projects.some(p => (p.weeklyLogs||[]).length > 0) ? risks.filter(r => r.severity === "Critical").length : 0} critical risks` 
                       : tab === "team" ? `${employees.length} roster members` 
                       : tab === "brd" ? "Generate functional specs via AI" 
                       : tab === "agile" ? `${projects.find(p => p.id === activeProjectId)?.name || "Select project"}`
@@ -1373,6 +1373,13 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
   const totalCriticalRisks = risks.filter(r => r.severity === "Critical").length;
   const totalHighRisks = risks.filter(r => r.severity === "High").length;
   const delayedTasks = tasks.filter(t => t.status !== "Done" && (new Date(t.due) < new Date()));
+
+  // Only surface risks and overdue tasks after at least one week has been simulated
+  // — before that, seed data risks/tasks shouldn't appear as real alerts
+  const hasAnySimulation = projects.some(p => (p.weeklyLogs || []).length > 0);
+  const displayedCriticalRisks = hasAnySimulation ? totalCriticalRisks : 0;
+  const displayedHighRisks = hasAnySimulation ? totalHighRisks : 0;
+  const displayedOverdueTasks = hasAnySimulation ? delayedTasks.length : 0;
   const allLogs = projects.flatMap(p => p.weeklyLogs || []);
   const avgVelocity = allLogs.length > 0 ? Math.round(allLogs.reduce((s, l) => s + (l.velocityActual || 0), 0) / allLogs.length) : null;
   const totalDelayDays = allLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
@@ -1411,8 +1418,8 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "Active Projects", value: projects.length, sub: `${projects.filter(p => p.status === "On Track" || p.status === "In Progress").length} on track`, accent: true },
-          { label: "Risk Exposure", value: totalCriticalRisks, sub: `${totalHighRisks} high · ${totalCriticalRisks} critical`, warn: totalCriticalRisks > 0 },
-          { label: "Stories Complete", value: `${stories.filter(s => s.status === "Done").length}/${stories.length}`, sub: `${delayedTasks.length} overdue tasks`, warn: delayedTasks.length > 0 },
+          { label: "Risk Exposure", value: displayedCriticalRisks, sub: `${displayedHighRisks} high · ${displayedCriticalRisks} critical`, warn: displayedCriticalRisks > 0 },
+          { label: "Stories Complete", value: `${stories.filter(s => s.status === "Done").length}/${stories.length}`, sub: displayedOverdueTasks > 0 ? `${displayedOverdueTasks} overdue tasks` : hasAnySimulation ? "No overdue tasks" : "Simulate a week to track", warn: displayedOverdueTasks > 0 },
         ].map((k) => (
           <div key={k.label} className={`bg-[#111] border rounded-xl p-4 transition-all ${k.accent ? "border-[#FFE600]/25" : k.warn && (typeof k.value === "number" ? k.value > 0 : true) ? "border-red-900/30" : "border-white/8"}`}>
             <div className="flex items-center justify-between mb-2">
