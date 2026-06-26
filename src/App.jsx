@@ -4060,7 +4060,8 @@ Return ONLY this JSON:
   };
 
   const getRiskScore = (r) => {
-    const p = Math.ceil(r.probability / 20);
+    const prob = Number(r.probability) || 0;
+    const p = Math.min(5, Math.max(1, Math.ceil(prob / 20))); // clamp 1-5; 0% → 1
     let impVal = 3;
     if (r.severity === "Low") impVal = 1;
     if (r.severity === "Medium") impVal = 3;
@@ -4074,8 +4075,10 @@ Return ONLY this JSON:
     return Array.from({ length: 5 }, (_, xIndex) => {
       const x = xIndex + 1;
       const matches = activeRisks.filter(r => {
-        const coords = getRiskScore(r);
-        return coords.x === x && coords.y === y;
+        try {
+          const coords = getRiskScore(r);
+          return coords.x === x && coords.y === y;
+        } catch { return false; }
       });
       return { x, y, count: matches.length, items: matches };
     });
@@ -5222,8 +5225,10 @@ Return ONLY this JSON:
                 {activeRisks
                   .filter(r => {
                     if (!riskFilter) return true;
-                    const c = getRiskScore(r);
-                    return c.x === riskFilter.x && c.y === riskFilter.y;
+                    try {
+                      const c = getRiskScore(r);
+                      return c.x === riskFilter.x && c.y === riskFilter.y;
+                    } catch { return false; }
                   })
                   .map(risk => (
                     <div key={risk.id} className="bg-black/35 border border-white/5 p-3 rounded-xl space-y-2">
