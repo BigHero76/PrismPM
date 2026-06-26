@@ -715,14 +715,27 @@ export default function App() {
     const projectSummary = projects.map(p => {
       const pStories = stories.filter(s => s.projectId === p.id);
       const pRisks = risks.filter(r => r.projectId === p.id);
-      return `Project: ${p.name} | Progress: ${p.progress}% | Budget: $${(p.spent||0).toLocaleString()}/$${(p.budget||0).toLocaleString()} | Stories: ${pStories.filter(s=>s.status==="Done").length}/${pStories.length} done | Critical Risks: ${pRisks.filter(r=>r.severity==="Critical").length}`;
+      const pLogs = (p.weeklyLogs || []);
+      const lastLog = pLogs[pLogs.length - 1];
+      const riskBreakdown = ["Critical","High","Medium","Low"].map(sev => {
+        const count = pRisks.filter(r => r.severity === sev).length;
+        return count > 0 ? `${count} ${sev}` : null;
+      }).filter(Boolean).join(", ");
+      const riskDetails = pRisks.map(r =>
+        `[${r.severity}] ${r.title} (Week ${r.encounteredWeek || "?"}) — ${r.mitigationPlan}`
+      ).join("; ");
+      const recentSummary = lastLog?.weekSummary ? `Latest (W${lastLog.week}): ${lastLog.weekSummary}` : "No weeks simulated yet";
+      return `Project: ${p.name} | Progress: ${p.progress}% | Budget: $${(p.spent||0).toLocaleString()}/$${(p.budget||0).toLocaleString()} | Stories: ${pStories.filter(s=>s.status==="Done").length}/${pStories.length} done | Risks: ${riskBreakdown || "none"} | ${recentSummary} | Risk details: ${riskDetails || "none"}`;
     }).join("\n");
     const systemCtx = `You are PrismPM Copilot, an expert AI project management assistant embedded in a PM tool. Be concise, specific, and actionable. Format your response clearly with short paragraphs or bullet points. Never respond with raw JSON. Always end with one specific recommended next action.
+
+IMPORTANT: When discussing risks, reference ALL severity levels (Critical, High, Medium, Low) not just Critical ones. When discussing project status, reference the latest weekly summary provided. Make sure your answers are fully consistent with the risk details and weekly summaries in the portfolio data below.
+
 Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}\nCurrent view: ${tab === "project" ? `Project Detail — ${selectedProject?.name}` : tab}`;
     try {
       const text = await callGroqText(query, systemCtx, key, 900);
-      setCopilotResponse(text);
       setCopilotHistory(prev => [...prev.slice(-9), { q: query, a: text }]);
+      setCopilotResponse(""); // clear so it doesn't show twice alongside history
     } catch (e) {
       setCopilotResponse("Error: " + e.message);
     } finally {
@@ -745,7 +758,10 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}\n
         storiesDone: pStories.filter(s => s.status === "Done").length, totalStories: pStories.length,
         criticalRisks: pRisks.filter(r => r.severity === "Critical").length,
         highRisks: pRisks.filter(r => r.severity === "High").length,
+        mediumRisks: pRisks.filter(r => r.severity === "Medium").length,
+        riskDetails: pRisks.map(r => `[${r.severity}] ${r.title} (Week ${r.encounteredWeek || "?"})`).join("; "),
         weeklyVelocity: lastLog?.velocityActual || 0, delayDays: lastLog?.delayDays || 0,
+        lastWeekSummary: lastLog?.weekSummary || null,
         weeksSimulated: (p.weeklyLogs || []).length
       };
     });
@@ -756,12 +772,14 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}\n
 Portfolio data: ${JSON.stringify(projectData)}
 Total team members: ${employees.length}
 
+IMPORTANT: Each project includes criticalRisks, highRisks, mediumRisks counts AND riskDetails (individual risk titles with severity). Use ALL of this in your riskHighlights — do not say "no high-level risks" if highRisks > 0. Reference the lastWeekSummary for each project when summarising tasks completed.
+
 Return ONLY this JSON (no markdown):
 {
   "headline": "one punchy sentence summarising portfolio health",
-  "tasksCompleted": "summary of stories/tasks completed across portfolio this week",
+  "tasksCompleted": "summary of stories/tasks completed across portfolio this week based on lastWeekSummary",
   "delayAlerts": ["specific delay alert per project if any"],
-  "riskHighlights": ["top 2-3 risk items across the portfolio"],
+  "riskHighlights": ["list ALL high and critical risks by name across the portfolio — never say no risks if counts > 0"],
   "predictiveInsights": [
     { "project": "project name", "prediction": "what the AI predicts e.g. likely to delay by X weeks", "confidence": "High/Medium/Low", "action": "recommended action" }
   ],
@@ -1311,9 +1329,7 @@ Return ONLY this JSON (no markdown):
                     Analysing portfolio data...
                   </div>
                 )}
-                {copilotResponse && !copilotLoading && (
-                  <div className="bg-white/4 border border-white/8 rounded-xl px-3 py-2.5 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{copilotResponse}</div>
-                )}
+                {/* copilotResponse intentionally not rendered here — answer goes straight into history */}
               </div>
 
               {/* Clear history */}
@@ -1350,6 +1366,7 @@ Return ONLY this JSON (no markdown):
 
 
 function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees, onCreateProject, onResetWorkspace, portfolioSummary, portfolioSummaryLoading, onGeneratePortfolioSummary }) {
+  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
   const budgetedProjects = projects.filter(p => p.budget != null);
   const totalBudget = budgetedProjects.reduce((sum, p) => sum + p.budget, 0);
   const totalSpent = budgetedProjects.reduce((sum, p) => sum + (p.spent || 0), 0);
@@ -1456,6 +1473,14 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
           <div className="flex items-center gap-2">
             <span className="text-[#FFE600] text-sm">✦</span>
             <span className="text-[10px] text-[#FFE600] font-bold uppercase tracking-widest">AI Weekly Portfolio Summary</span>
+            {portfolioSummary && (
+              <button
+                onClick={() => setSummaryCollapsed(c => !c)}
+                className="text-[9px] text-slate-500 hover:text-[#FFE600] border border-white/10 hover:border-[#FFE600]/30 px-2 py-0.5 rounded transition-all ml-1"
+              >
+                {summaryCollapsed ? "▼ Expand" : "▲ Collapse"}
+              </button>
+            )}
           </div>
           <button
             onClick={onGeneratePortfolioSummary}
@@ -1474,7 +1499,7 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
           <p className="text-[11px] text-slate-600">Click to generate an AI-powered weekly summary covering tasks completed, delay alerts, risk highlights, and predictive insights across all projects.</p>
         )}
 
-        {portfolioSummary && (
+        {portfolioSummary && !summaryCollapsed && (
           <div className="space-y-4">
             {/* Headline */}
             <p className="text-sm text-white font-medium leading-snug border-l-2 border-[#FFE600] pl-3">{portfolioSummary.headline}</p>
@@ -1543,6 +1568,9 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
               </div>
             )}
           </div>
+        )}
+        {portfolioSummary && summaryCollapsed && (
+          <p className="text-xs text-slate-400 italic border-l-2 border-[#FFE600]/40 pl-3">{portfolioSummary.headline}</p>
         )}
       </div>
 
