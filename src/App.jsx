@@ -541,6 +541,9 @@ export default function App() {
   const [copilotHistory, setCopilotHistory] = useState([]);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [storyDetailModal, setStoryDetailModal] = useState(null);
+  // Portfolio-level AI smart summary
+  const [portfolioSummary, setPortfolioSummary] = useState(null);
+  const [portfolioSummaryLoading, setPortfolioSummaryLoading] = useState(false);
 
   useEffect(() => { try { localStorage.setItem("prismpm.overrideLog", JSON.stringify(aiOverrideLog)); } catch {} }, [aiOverrideLog]);
 
@@ -588,18 +591,63 @@ export default function App() {
       const pRisks = risks.filter(r => r.projectId === p.id);
       return `Project: ${p.name} | Progress: ${p.progress}% | Budget: $${(p.spent||0).toLocaleString()}/$${(p.budget||0).toLocaleString()} | Stories: ${pStories.filter(s=>s.status==="Done").length}/${pStories.length} done | Critical Risks: ${pRisks.filter(r=>r.severity==="Critical").length}`;
     }).join("\n");
-    const systemCtx = `You are PrismPM Copilot, an expert AI project management assistant. Be concise, specific, and actionable. Never respond with raw JSON.
-Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
+    const systemCtx = `You are PrismPM Copilot, an expert AI project management assistant embedded in a PM tool. Be concise, specific, and actionable. Format your response clearly with short paragraphs or bullet points. Never respond with raw JSON. Always end with one specific recommended next action.
+Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}\nCurrent view: ${tab === "project" ? `Project Detail — ${selectedProject?.name}` : tab}`;
     try {
-      // Use plain-text call — no response_format:json_object — Groq rejects
-      // json_object mode when the messages don't contain the word "json".
-      const text = await callGroqText(query, systemCtx, key, 800);
+      const text = await callGroqText(query, systemCtx, key, 900);
       setCopilotResponse(text);
       setCopilotHistory(prev => [...prev.slice(-9), { q: query, a: text }]);
     } catch (e) {
       setCopilotResponse("Error: " + e.message);
     } finally {
       setCopilotLoading(false);
+    }
+  };
+
+  const handleGeneratePortfolioSummary = async () => {
+    const key = localStorage.getItem("prismpm.groqApiKey") || import.meta.env.VITE_GROQ_API_KEY || "";
+    if (!key) { alert("Add a Groq API key in AI Setup first."); return; }
+    setPortfolioSummaryLoading(true);
+    setPortfolioSummary(null);
+    const projectData = projects.map(p => {
+      const pStories = stories.filter(s => s.projectId === p.id);
+      const pRisks = risks.filter(r => r.projectId === p.id);
+      const lastLog = (p.weeklyLogs || []).slice(-1)[0] || null;
+      return {
+        name: p.name, client: p.client, pm: p.pm, status: p.status, progress: p.progress,
+        budget: p.budget, spent: p.spent || 0,
+        storiesDone: pStories.filter(s => s.status === "Done").length, totalStories: pStories.length,
+        criticalRisks: pRisks.filter(r => r.severity === "Critical").length,
+        highRisks: pRisks.filter(r => r.severity === "High").length,
+        weeklyVelocity: lastLog?.velocityActual || 0, delayDays: lastLog?.delayDays || 0,
+        weeksSimulated: (p.weeklyLogs || []).length
+      };
+    });
+    try {
+      const result = await callGroq(
+        `You are an expert project management AI. Analyze this portfolio and generate a structured weekly executive summary.
+
+Portfolio data: ${JSON.stringify(projectData)}
+Total team members: ${employees.length}
+
+Return ONLY this JSON (no markdown):
+{
+  "headline": "one punchy sentence summarising portfolio health",
+  "tasksCompleted": "summary of stories/tasks completed across portfolio this week",
+  "delayAlerts": ["specific delay alert per project if any"],
+  "riskHighlights": ["top 2-3 risk items across the portfolio"],
+  "predictiveInsights": [
+    { "project": "project name", "prediction": "what the AI predicts e.g. likely to delay by X weeks", "confidence": "High/Medium/Low", "action": "recommended action" }
+  ],
+  "recommendations": ["up to 3 specific actionable recommendations for the PM team this week"]
+}`,
+        "You are a senior PM advisor AI. Respond only with valid JSON, no markdown or extra text.", key, 1500
+      );
+      setPortfolioSummary(result);
+    } catch (e) {
+      alert("AI summary failed: " + e.message);
+    } finally {
+      setPortfolioSummaryLoading(false);
     }
   };
 
@@ -919,7 +967,7 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
 
             {/* Content */}
             <div className="p-6 max-w-5xl w-full mx-auto flex-1">
-              {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} onCreateProject={handleCreateProject} onResetWorkspace={() => {
+              {tab === "dashboard" && <DashboardTab projects={projects} risks={risks} stories={stories} tasks={tasks} onSelectProject={handleSelectProject} employees={employees} onCreateProject={handleCreateProject} portfolioSummary={portfolioSummary} portfolioSummaryLoading={portfolioSummaryLoading} onGeneratePortfolioSummary={handleGeneratePortfolioSummary} onResetWorkspace={() => {
                 if (!window.confirm("Reset workspace? This will clear all projects, epics, sprints, stories, tasks, and risks, and restore the default seed data.")) return;
                 setProjects(INITIAL_PROJECTS);
                 setEpics([]);
@@ -1067,59 +1115,101 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
             className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-[#FFE600] text-black font-black text-xl shadow-2xl hover:bg-white transition-all flex items-center justify-center"
             title="AI Copilot"
           >
-            ✦
+            {showCopilot ? "✕" : "✦"}
           </button>
 
           {/* Copilot panel */}
           {showCopilot && (
-            <div className="fixed bottom-24 right-6 z-50 w-96 bg-[#111] border border-white/15 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: "70vh" }}>
-              <div className="flex justify-between items-center px-4 py-3 bg-[#FFE600]">
-                <span className="font-black text-black text-sm uppercase tracking-wider">✦ PrismPM Copilot</span>
-                <button onClick={() => setShowCopilot(false)} className="text-black font-bold text-lg leading-none">✕</button>
+            <div className="fixed bottom-24 right-6 z-50 w-[420px] bg-[#0d0d0d] border border-white/12 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: "75vh" }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 bg-[#FFE600]">
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-black text-sm">✦ PrismPM Copilot</span>
+                  {tab === "project" && selectedProject && (
+                    <span className="text-[9px] bg-black/20 text-black font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">{selectedProject.name}</span>
+                  )}
+                </div>
+                <button onClick={() => setShowCopilot(false)} className="text-black/60 hover:text-black font-bold text-base leading-none">✕</button>
+              </div>
+
+              {/* Context chip */}
+              <div className="px-4 pt-3 pb-1">
+                <div className="text-[9px] text-slate-600 uppercase tracking-widest">
+                  Context: {tab === "dashboard" ? "Portfolio Overview" : tab === "project" ? `${selectedProject?.name || "Project"}` : tab === "agile" ? "Agile Board" : tab === "team" ? "Team Directory" : "BRD Generator"}
+                </div>
               </div>
 
               {/* History */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-                {copilotHistory.length === 0 && !copilotLoading && !copilotResponse && (
-                  <div className="space-y-2">
-                    <p className="text-slate-400 text-xs">Ask me anything about your projects. Try:</p>
-                    {["Which project is most at risk?", "Summarise this week's progress", "What should the team focus on next?", "Which stories are overdue?"].map(s => (
-                      <button key={s} onClick={() => { setCopilotQuery(s); handleCopilotAsk(s); }} className="w-full text-left text-xs text-slate-300 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-all">
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div className="flex-1 overflow-y-auto px-4 pb-3 space-y-3 min-h-0">
+                {copilotHistory.length === 0 && !copilotLoading && !copilotResponse && (() => {
+                  const contextPrompts = tab === "project" && selectedProject ? [
+                    `What is the risk outlook for ${selectedProject.name}?`,
+                    `Is ${selectedProject.name} on track to meet its deadline?`,
+                    `What should the team prioritise this week?`,
+                    `Summarise budget health for ${selectedProject.name}`,
+                  ] : tab === "agile" ? [
+                    "Which stories are blocking velocity?",
+                    "How should I prioritise the backlog?",
+                    "What's the current sprint health?",
+                    "Recommend next sprint scope",
+                  ] : tab === "team" ? [
+                    "Who is over-allocated across projects?",
+                    "Which team members are available for new work?",
+                    "Recommend team composition for a banking project",
+                  ] : [
+                    "Which project is most at risk this week?",
+                    "Give me an executive summary of the portfolio",
+                    "Which project is likely to miss its deadline?",
+                    "Where should the PM team focus this week?",
+                  ];
+                  return (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Suggested questions</p>
+                      {contextPrompts.map(s => (
+                        <button key={s} onClick={() => { setCopilotQuery(s); handleCopilotAsk(s); }} className="w-full text-left text-xs text-slate-300 bg-white/4 hover:bg-[#FFE600]/8 border border-white/8 hover:border-[#FFE600]/25 rounded-xl px-3 py-2.5 transition-all leading-snug">
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
                 {copilotHistory.map((h, i) => (
                   <div key={i} className="space-y-1.5">
-                    <div className="bg-[#FFE600]/10 border border-[#FFE600]/20 rounded-xl px-3 py-2 text-xs text-[#FFE600]">{h.q}</div>
-                    <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{h.a}</div>
+                    <div className="bg-[#FFE600]/10 border border-[#FFE600]/15 rounded-xl px-3 py-2 text-xs text-[#FFE600] font-medium">{h.q}</div>
+                    <div className="bg-white/4 border border-white/8 rounded-xl px-3 py-2.5 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{h.a}</div>
                   </div>
                 ))}
                 {copilotLoading && (
-                  <div className="flex items-center gap-2 text-[#FFE600] text-xs">
+                  <div className="flex items-center gap-2 text-[#FFE600] text-xs py-2">
                     <div className="w-3 h-3 border-2 border-[#FFE600] border-t-transparent rounded-full animate-spin" />
-                    Thinking...
+                    Analysing portfolio data...
                   </div>
                 )}
                 {copilotResponse && !copilotLoading && (
-                  <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{copilotResponse}</div>
+                  <div className="bg-white/4 border border-white/8 rounded-xl px-3 py-2.5 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{copilotResponse}</div>
                 )}
               </div>
 
+              {/* Clear history */}
+              {copilotHistory.length > 0 && (
+                <div className="px-4 pb-1 flex justify-end">
+                  <button onClick={() => { setCopilotHistory([]); setCopilotResponse(""); }} className="text-[9px] text-slate-600 hover:text-slate-400 transition-colors">Clear history</button>
+                </div>
+              )}
+
               {/* Input */}
-              <div className="p-3 border-t border-white/10 flex gap-2">
+              <div className="p-3 border-t border-white/8 flex gap-2">
                 <input
                   value={copilotQuery}
                   onChange={e => setCopilotQuery(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && !copilotLoading) { handleCopilotAsk(copilotQuery); setCopilotQuery(""); } }}
-                  placeholder="Ask Copilot anything..."
-                  className="flex-1 bg-black border border-white/20 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFE600] placeholder-slate-600"
+                  placeholder="Ask anything about your projects..."
+                  className="flex-1 bg-black border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#FFE600] placeholder-slate-700"
                 />
                 <button
                   onClick={() => { handleCopilotAsk(copilotQuery); setCopilotQuery(""); }}
                   disabled={copilotLoading || !copilotQuery.trim()}
-                  className="px-3 py-2 bg-[#FFE600] text-black text-xs font-bold rounded-xl hover:bg-white transition-all disabled:opacity-40"
+                  className="px-3 py-2 bg-[#FFE600] text-black text-sm font-bold rounded-xl hover:bg-white transition-all disabled:opacity-40"
                 >
                   →
                 </button>
@@ -1133,71 +1223,211 @@ Current portfolio:\n${projectSummary}\nTotal team members: ${employees.length}`;
 }
 
 
-function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees, onCreateProject, onResetWorkspace }) {
+function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employees, onCreateProject, onResetWorkspace, portfolioSummary, portfolioSummaryLoading, onGeneratePortfolioSummary }) {
   const budgetedProjects = projects.filter(p => p.budget != null);
   const totalBudget = budgetedProjects.reduce((sum, p) => sum + p.budget, 0);
   const totalSpent = budgetedProjects.reduce((sum, p) => sum + (p.spent || 0), 0);
   const totalCriticalRisks = risks.filter(r => r.severity === "Critical").length;
+  const totalHighRisks = risks.filter(r => r.severity === "High").length;
   const delayedTasks = tasks.filter(t => t.status !== "Done" && (new Date(t.due) < new Date()));
-
-  // Avg velocity across all projects that have weekly logs
   const allLogs = projects.flatMap(p => p.weeklyLogs || []);
   const avgVelocity = allLogs.length > 0 ? Math.round(allLogs.reduce((s, l) => s + (l.velocityActual || 0), 0) / allLogs.length) : null;
-
-  // Schedule impact: sum of delayDays across all weekly logs
   const totalDelayDays = allLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
 
-  // Team wide workload stats
-  const memberWorkload = employees.map(emp => {
-    const assignedStories = stories.filter(s => s.assignee === emp.name && s.status !== "Done");
-    const points = assignedStories.reduce((sum, s) => sum + (Number(s.points) || 0), 0);
-    return { name: emp.name, role: emp.role, points, count: assignedStories.length };
-  }).filter(e => e.points > 0).sort((a, b) => b.points - a.points);
+  // Per-project health score (0-100) for demo
+  const getHealthScore = (p) => {
+    const projRisks = risks.filter(r => r.projectId === p.id);
+    const projStories = stories.filter(s => s.projectId === p.id);
+    let score = 80;
+    score -= projRisks.filter(r => r.severity === "Critical").length * 15;
+    score -= projRisks.filter(r => r.severity === "High").length * 7;
+    const logs = p.weeklyLogs || [];
+    const lastLog = logs.slice(-1)[0];
+    if (lastLog?.delayDays > 0) score -= Math.min(lastLog.delayDays * 3, 20);
+    if (lastLog?.velocityActual < lastLog?.velocityTarget) score -= 8;
+    const budgetPct = p.budget > 0 ? (p.spent || 0) / p.budget : 0;
+    if (budgetPct > 0.9) score -= 10;
+    return Math.max(10, Math.min(100, Math.round(score)));
+  };
+
+  // Predictive delay detection
+  const atRiskProjects = projects.filter(p => {
+    const logs = p.weeklyLogs || [];
+    if (logs.length < 2) return false;
+    const avgVel = logs.reduce((s, l) => s + (l.velocityActual || 0), 0) / logs.length;
+    const lastLog = logs.slice(-1)[0];
+    const remaining = lastLog?.remainingPoints || 0;
+    const plannedWeeks = Math.ceil((p.plannedDays || 90) / 7);
+    const projectedWeeks = logs.length + (avgVel > 0 ? Math.ceil(remaining / avgVel) : 0);
+    return projectedWeeks > plannedWeeks;
+  });
 
   return (
-    <div className="space-y-6">
-      {/* KPI Strip — 3 primary + 3 secondary in a clean 2-row layout */}
+    <div className="space-y-5">
+      {/* ── Primary KPIs ── */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Active Projects", value: projects.length, icon: "◈", accent: true },
-          { label: "Critical Risks", value: totalCriticalRisks, icon: "⚠", warn: totalCriticalRisks > 0 },
-          { label: "Overdue Tasks", value: delayedTasks.length, icon: "⏱", warn: delayedTasks.length > 0 },
+          { label: "Active Projects", value: projects.length, sub: `${projects.filter(p => p.status === "On Track" || p.status === "In Progress").length} on track`, accent: true },
+          { label: "Risk Exposure", value: totalCriticalRisks, sub: `${totalHighRisks} high · ${totalCriticalRisks} critical`, warn: totalCriticalRisks > 0 },
+          { label: "Stories Complete", value: `${stories.filter(s => s.status === "Done").length}/${stories.length}`, sub: `${delayedTasks.length} overdue tasks`, warn: delayedTasks.length > 0 },
         ].map((k) => (
-          <div key={k.label} className={`bg-[#111] border rounded-xl p-4 transition-all ${k.accent ? "border-[#FFE600]/20" : k.warn && k.value > 0 ? "border-red-900/40" : "border-white/8"}`}>
-            <div className="flex items-center justify-between mb-3">
+          <div key={k.label} className={`bg-[#111] border rounded-xl p-4 transition-all ${k.accent ? "border-[#FFE600]/25" : k.warn && (typeof k.value === "number" ? k.value > 0 : true) ? "border-red-900/30" : "border-white/8"}`}>
+            <div className="flex items-center justify-between mb-2">
               <span className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold">{k.label}</span>
-              <span className="text-slate-600 text-xs">{k.icon}</span>
             </div>
-            <div className={`font-mono font-bold text-3xl ${k.accent ? "text-[#FFE600]" : k.warn && k.value > 0 ? "text-red-400" : "text-white"}`}>{k.value}</div>
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Budget Used", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "—" },
-          { label: "Avg Velocity", value: avgVelocity != null ? `${avgVelocity} pts` : "—" },
-          { label: "Schedule Delay", value: totalDelayDays > 0 ? `+${totalDelayDays}d` : "0d", warn: totalDelayDays > 0 },
-        ].map((k) => (
-          <div key={k.label} className="bg-[#111] border border-white/8 rounded-xl px-4 py-3 flex items-center justify-between">
-            <span className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold">{k.label}</span>
-            <span className={`font-mono font-semibold text-sm ${k.warn ? "text-red-400" : "text-slate-300"}`}>{k.value}</span>
+            <div className={`font-mono font-bold text-2xl mb-0.5 ${k.accent ? "text-[#FFE600]" : k.warn && (typeof k.value === "number" ? k.value > 0 : true) ? "text-red-400" : "text-white"}`}>{k.value}</div>
+            <div className="text-[10px] text-slate-600">{k.sub}</div>
           </div>
         ))}
       </div>
 
-      {/* New Project Creation */}
+      {/* ── Secondary metrics strip ── */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Budget Used", value: totalBudget > 0 ? `${Math.round((totalSpent / totalBudget) * 100)}%` : "—", sub: totalBudget > 0 ? `$${Math.round(totalSpent/1000)}k of $${Math.round(totalBudget/1000)}k` : "No budget set" },
+          { label: "Avg Velocity", value: avgVelocity != null ? `${avgVelocity} pts` : "—", sub: "per week across portfolio" },
+          { label: "Schedule Health", value: totalDelayDays > 0 ? `+${totalDelayDays}d` : "On time", sub: atRiskProjects.length > 0 ? `${atRiskProjects.length} project${atRiskProjects.length > 1 ? "s" : ""} at delay risk` : "All projects on schedule", warn: totalDelayDays > 0 },
+        ].map((k) => (
+          <div key={k.label} className="bg-[#111] border border-white/8 rounded-xl px-4 py-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold">{k.label}</span>
+              <span className={`font-mono font-semibold text-sm ${k.warn ? "text-red-400" : "text-slate-300"}`}>{k.value}</span>
+            </div>
+            <div className="text-[10px] text-slate-600">{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Predictive Risk Alerts ── */}
+      {atRiskProjects.length > 0 && (
+        <div className="bg-red-950/20 border border-red-800/30 rounded-xl p-4 space-y-2">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-red-400 text-xs">⚠</span>
+            <span className="text-[10px] text-red-400 font-bold uppercase tracking-widest">Predictive Delay Alerts</span>
+          </div>
+          {atRiskProjects.map(p => {
+            const logs = p.weeklyLogs || [];
+            const avgVel = logs.reduce((s, l) => s + (l.velocityActual || 0), 0) / logs.length;
+            const lastLog = logs.slice(-1)[0];
+            const remaining = lastLog?.remainingPoints || 0;
+            const plannedWeeks = Math.ceil((p.plannedDays || 90) / 7);
+            const projectedWeeks = logs.length + Math.ceil(remaining / avgVel);
+            const delayW = projectedWeeks - plannedWeeks;
+            return (
+              <div key={p.id} className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-red-300 font-medium">{p.name}</span>
+                <span className="text-red-400">Likely to delay by ~{delayW} week{delayW > 1 ? "s" : ""} at current velocity ({Math.round(avgVel)} pts/wk)</span>
+                <button onClick={() => onSelectProject(p)} className="text-[9px] text-red-400 border border-red-800/40 px-2 py-0.5 rounded hover:bg-red-900/30 transition-all shrink-0">View →</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── AI Portfolio Weekly Summary ── */}
+      <div className="bg-[#111] border border-[#FFE600]/15 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[#FFE600] text-sm">✦</span>
+            <span className="text-[10px] text-[#FFE600] font-bold uppercase tracking-widest">AI Weekly Portfolio Summary</span>
+          </div>
+          <button
+            onClick={onGeneratePortfolioSummary}
+            disabled={portfolioSummaryLoading}
+            className="text-[10px] bg-[#FFE600] text-black font-bold px-3 py-1.5 rounded-lg hover:bg-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            {portfolioSummaryLoading ? (
+              <><div className="w-2.5 h-2.5 border border-black border-t-transparent rounded-full animate-spin" />Generating...</>
+            ) : (
+              <>{portfolioSummary ? "↻ Refresh" : "✦ Generate Summary"}</>
+            )}
+          </button>
+        </div>
+
+        {!portfolioSummary && !portfolioSummaryLoading && (
+          <p className="text-[11px] text-slate-600">Click to generate an AI-powered weekly summary covering tasks completed, delay alerts, risk highlights, and predictive insights across all projects.</p>
+        )}
+
+        {portfolioSummary && (
+          <div className="space-y-4">
+            {/* Headline */}
+            <p className="text-sm text-white font-medium leading-snug border-l-2 border-[#FFE600] pl-3">{portfolioSummary.headline}</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Tasks Completed */}
+              <div className="space-y-1.5">
+                <div className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold flex items-center gap-1"><span className="text-green-400">✓</span> Tasks Completed</div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">{portfolioSummary.tasksCompleted}</p>
+              </div>
+              {/* Delay Alerts */}
+              <div className="space-y-1.5">
+                <div className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold flex items-center gap-1"><span className="text-red-400">⚠</span> Delay Alerts</div>
+                {portfolioSummary.delayAlerts?.length > 0 ? (
+                  <ul className="space-y-1">
+                    {portfolioSummary.delayAlerts.map((a, i) => <li key={i} className="text-[11px] text-red-300 flex gap-1.5"><span className="shrink-0 text-red-500 mt-0.5">▸</span>{a}</li>)}
+                  </ul>
+                ) : <p className="text-[11px] text-green-400">No delays detected this week.</p>}
+              </div>
+            </div>
+
+            {/* Risk Highlights */}
+            {portfolioSummary.riskHighlights?.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold flex items-center gap-1"><span className="text-amber-400">◆</span> Risk Highlights</div>
+                <div className="flex flex-wrap gap-2">
+                  {portfolioSummary.riskHighlights.map((r, i) => (
+                    <span key={i} className="text-[10px] text-amber-300 bg-amber-900/20 border border-amber-800/30 px-2 py-1 rounded-lg">{r}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Predictive Insights */}
+            {portfolioSummary.predictiveInsights?.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold flex items-center gap-1"><span className="text-sky-400">◈</span> Predictive Insights</div>
+                <div className="space-y-2">
+                  {portfolioSummary.predictiveInsights.map((ins, i) => (
+                    <div key={i} className="bg-black/40 border border-white/6 rounded-lg p-3 flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-[10px] text-white font-semibold">{ins.project}</span>
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase ${ins.confidence === "High" ? "bg-red-900/40 text-red-400" : ins.confidence === "Medium" ? "bg-amber-900/40 text-amber-400" : "bg-slate-800 text-slate-400"}`}>{ins.confidence}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">{ins.prediction}</p>
+                        {ins.action && <p className="text-[10px] text-[#FFE600] mt-1 font-medium">→ {ins.action}</p>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {portfolioSummary.recommendations?.length > 0 && (
+              <div className="space-y-1.5 pt-1 border-t border-white/6">
+                <div className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold">Recommended Actions</div>
+                <ol className="space-y-1">
+                  {portfolioSummary.recommendations.map((r, i) => (
+                    <li key={i} className="flex items-start gap-2 text-[11px] text-slate-300">
+                      <span className="text-[#FFE600] font-mono font-bold shrink-0">{i + 1}.</span>{r}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── New Project Panel ── */}
       <NewProjectPanel employees={employees} onCreateProject={onCreateProject} />
 
-      {/* Portfolio */}
+      {/* ── Projects List ── */}
       <div>
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Projects</h2>
-          <button
-            onClick={onResetWorkspace}
-            className="text-[9px] text-slate-600 hover:text-red-400 font-semibold transition-colors"
-          >
-            Reset workspace
-          </button>
+          <button onClick={onResetWorkspace} className="text-[9px] text-slate-600 hover:text-red-400 font-semibold transition-colors">Reset workspace</button>
         </div>
         <div className="space-y-2">
           {projects.map((p) => {
@@ -1209,79 +1439,60 @@ function DashboardTab({ projects, risks, stories, tasks, onSelectProject, employ
             const projLogs = p.weeklyLogs || [];
             const projDelay = projLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
             const accentColor = p.status === "On Track" || p.status === "In Progress" ? "#FFE600" : p.status === "At Risk" ? "#f59e0b" : "#ef4444";
+            const healthScore = getHealthScore(p);
+            const healthColor = healthScore >= 75 ? "text-green-400" : healthScore >= 55 ? "text-amber-400" : "text-red-400";
+            const nextSprint = (() => {
+              const ps = projStories.filter(s => s.status !== "Done" && s.sprintId);
+              return ps.length > 0 ? `${ps.length} stories in sprint` : null;
+            })();
             return (
               <div
                 key={p.id}
-                className="bg-[#111] border border-white/8 rounded-xl p-4 cursor-pointer hover:border-[#FFE600]/25 hover:bg-[#141414] transition-all duration-200 group"
+                className="bg-[#111] border border-white/8 rounded-xl p-4 cursor-pointer hover:border-[#FFE600]/25 hover:bg-[#131313] transition-all duration-200 group"
                 onClick={() => onSelectProject(p)}
                 style={{ borderLeft: `3px solid ${accentColor}` }}
               >
                 <div className="flex items-center gap-4">
-                  {/* Progress ring — smaller, tighter */}
                   <div className="shrink-0">
-                    <PulseRing progress={p.progress} status={p.status} size={52} />
+                    <PulseRing progress={p.progress} status={p.status} size={50} />
                   </div>
-
-                  {/* Main info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2.5 mb-0.5">
-                      <h3 className="font-semibold text-white text-sm group-hover:text-[#FFE600] transition-colors truncate">{p.name}</h3>
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <h3 className="font-semibold text-white text-sm group-hover:text-[#FFE600] transition-colors">{p.name}</h3>
                       <StatusBadge status={p.status} />
-                      {projDelay > 0 && (
-                        <span className="text-[9px] text-red-400 font-bold shrink-0">+{projDelay}d</span>
-                      )}
+                      {projDelay > 0 && <span className="text-[9px] text-red-400 font-bold">+{projDelay}d delay</span>}
+                      {isCritical && <span className="text-[9px] text-red-400 bg-red-900/20 border border-red-800/30 px-1.5 py-0.5 rounded font-bold">Critical Risk</span>}
                     </div>
-                    <p className="text-[11px] text-slate-500 truncate">{p.description}</p>
-                    <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-600">
+                    <p className="text-[11px] text-slate-500 truncate mb-1.5">{p.description}</p>
+                    <div className="flex items-center gap-3 text-[10px] text-slate-600 flex-wrap">
                       <span className="text-slate-400 font-medium">{p.client}</span>
-                      <span>·</span>
                       <Stars count={p.clientStars} size="sm" />
-                      <span>·</span>
                       <span>PM: <span className="text-slate-400">{p.pm}</span></span>
-                      {isCritical && <><span>·</span><span className="text-red-400 font-semibold">Critical risk</span></>}
+                      <span>{doneStories}/{projStories.length} stories done</span>
+                      {nextSprint && <span className="text-[#FFE600]/70">{nextSprint}</span>}
                     </div>
                   </div>
-
-                  {/* Budget — right side */}
-                  {hasBudget && (
-                    <div className="shrink-0 text-right">
-                      <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1">Budget</div>
-                      <div className="text-xs font-mono text-white">
-                        ${Math.round((p.spent || 0) / 1000)}k
-                        <span className="text-slate-600"> / ${Math.round(p.budget / 1000)}k</span>
-                      </div>
-                      <div className="mt-1.5 w-24">
-                        <ProgressBar value={p.budget > 0 ? Math.round(((p.spent || 0) / p.budget) * 100) : 0} />
-                      </div>
+                  {/* Health + Budget */}
+                  <div className="shrink-0 text-right space-y-2">
+                    <div>
+                      <div className="text-[8px] text-slate-600 uppercase tracking-wider mb-0.5">Health</div>
+                      <div className={`font-mono font-bold text-sm ${healthColor}`}>{healthScore}</div>
                     </div>
-                  )}
-
-                  <span className="text-slate-700 group-hover:text-[#FFE600] transition-colors text-sm ml-1">→</span>
+                    {hasBudget && (
+                      <div>
+                        <div className="text-[8px] text-slate-600 uppercase tracking-wider mb-1">Budget</div>
+                        <div className="text-[10px] font-mono text-white">${Math.round((p.spent || 0)/1000)}k<span className="text-slate-600">/${Math.round(p.budget/1000)}k</span></div>
+                        <div className="mt-1 w-20"><ProgressBar value={p.budget > 0 ? Math.round(((p.spent||0)/p.budget)*100) : 0} /></div>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-slate-700 group-hover:text-[#FFE600] transition-colors ml-1">→</span>
                 </div>
               </div>
             );
           })}
         </div>
       </div>
-
-      {/* Workload snapshot — only if there's data */}
-      {memberWorkload.length > 0 && (
-        <div>
-          <h2 className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-3">Team Workload</h2>
-          <div className="bg-[#111] border border-white/8 rounded-xl p-4 space-y-2.5">
-            {memberWorkload.slice(0, 5).map((m) => (
-              <div key={m.name} className="flex items-center gap-3">
-                <span className="text-[11px] text-slate-400 w-32 truncate">{m.name}</span>
-                <span className="text-[9px] text-slate-600 w-20 truncate">{m.role}</span>
-                <div className="flex-1">
-                  <ProgressBar value={Math.min((m.points / 40) * 100, 100)} />
-                </div>
-                <span className="text-[10px] font-mono text-slate-400 w-14 text-right">{m.points} pts</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -4108,20 +4319,60 @@ Return ONLY this JSON:
 
           {/* AI Smart Weekly Summary */}
           {smartSummary && smartSummary.length > 0 && (
-            <div className="bg-[#2E2E2E]/30 border border-[#FFE600]/20 rounded-2xl p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-[#FFE600] text-base">✦</span>
-                <h4 className="text-[#FFE600] text-xs font-bold uppercase tracking-widest">AI Weekly Summary — Week {selectedWeek}</h4>
-                <span className="text-[10px] text-slate-500 ml-auto">{currentWeekLog?.velocityActual} pts completed · {currentWeekLog?.delayDays > 0 ? `⚠️ ${currentWeekLog.delayDays}d delay` : "✅ On schedule"}</span>
+            <div className="bg-[#111] border border-[#FFE600]/20 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[#FFE600]">✦</span>
+                  <h4 className="text-[10px] text-[#FFE600] font-bold uppercase tracking-widest">AI Weekly Summary — Week {selectedWeek}</h4>
+                </div>
+                <div className="flex items-center gap-3 text-[9px] text-slate-600">
+                  <span className="text-sky-400 font-mono">{currentWeekLog?.velocityActual} pts done</span>
+                  <span className={currentWeekLog?.delayDays > 0 ? "text-red-400" : "text-green-400"}>
+                    {currentWeekLog?.delayDays > 0 ? `+${currentWeekLog.delayDays}d delay` : "On schedule"}
+                  </span>
+                </div>
               </div>
-              <ul className="space-y-2">
-                {smartSummary.map((bullet, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
-                    <span className="text-[#FFE600] mt-0.5 flex-shrink-0">▸</span>
-                    <span>{bullet}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="grid grid-cols-3 gap-3">
+                {/* Tasks Completed */}
+                <div className="bg-black/30 rounded-lg p-3 space-y-1.5">
+                  <div className="text-[9px] text-green-400 font-bold uppercase tracking-widest flex items-center gap-1">✓ Completed</div>
+                  {(currentWeekLog?.storyUpdates || []).filter(u => u.status === "Done").length > 0 ? (
+                    <ul className="space-y-1">
+                      {(currentWeekLog?.storyUpdates || []).filter(u => u.status === "Done").slice(0, 3).map((u, i) => (
+                        <li key={i} className="text-[10px] text-slate-300 flex gap-1.5 items-start"><span className="text-green-400 shrink-0 mt-0.5">▸</span>{u.title}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[10px] text-slate-500">{smartSummary[0] || "No completions this week."}</p>
+                  )}
+                </div>
+                {/* Delays */}
+                <div className="bg-black/30 rounded-lg p-3 space-y-1.5">
+                  <div className="text-[9px] text-red-400 font-bold uppercase tracking-widest flex items-center gap-1">⚠ Delays</div>
+                  {currentWeekLog?.delayDays > 0 ? (
+                    <p className="text-[10px] text-red-300">+{currentWeekLog.delayDays} day{currentWeekLog.delayDays > 1 ? "s" : ""} behind schedule. Velocity: {currentWeekLog.velocityActual}/{currentWeekLog.velocityTarget} pts target.</p>
+                  ) : (
+                    <p className="text-[10px] text-green-400">No delays this week. Team met velocity target.</p>
+                  )}
+                </div>
+                {/* Risks */}
+                <div className="bg-black/30 rounded-lg p-3 space-y-1.5">
+                  <div className="text-[9px] text-amber-400 font-bold uppercase tracking-widest flex items-center gap-1">◆ Risks</div>
+                  {(currentWeekLog?.risks || []).length > 0 ? (
+                    <ul className="space-y-1">
+                      {(currentWeekLog.risks || []).slice(0, 2).map((r, i) => (
+                        <li key={i} className="text-[10px] text-amber-300 flex gap-1.5 items-start"><span className="shrink-0">▸</span>{r}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[10px] text-slate-500">{smartSummary[smartSummary.length - 1] || "No new risks surfaced."}</p>
+                  )}
+                </div>
+              </div>
+              {/* Narrative summary */}
+              {currentWeekLog?.weekSummary && (
+                <p className="text-[11px] text-slate-400 leading-relaxed border-l-2 border-[#FFE600]/30 pl-3 italic">{currentWeekLog.weekSummary}</p>
+              )}
             </div>
           )}
               doc, or set manually. Stays hidden before that so nothing fabricated shows. */
@@ -4679,177 +4930,211 @@ Return ONLY this JSON:
             </div>
           </div>
 
-          {/* Interactive Gantt */}
-          <div className="bg-[#2E2E2E]/20 border border-white/5 rounded-2xl p-5 space-y-3">
-            <div className="flex justify-between items-center">
-              <h4 className="text-white text-xs font-bold uppercase tracking-widest">Gantt Timeline</h4>
-              <span className="text-[10px] text-slate-500">Click an epic row to expand stories</span>
+          {/* Upgraded Gantt Timeline */}
+          <div className="bg-[#111] border border-white/8 rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-white text-sm font-bold">Project Timeline</h4>
+                <p className="text-[10px] text-slate-500 mt-0.5">Epic phases · sprint lanes · milestone markers · current week indicator</p>
+              </div>
+              <div className="flex items-center gap-3 text-[9px]">
+                {[["#FFE600","In Progress"],["#22c55e","Complete"],["#ef4444","Delayed"],["#60a5fa","Planned"]].map(([c,l]) => (
+                  <span key={l} className="flex items-center gap-1"><span style={{ background: c, display: "inline-block", width: 8, height: 8, borderRadius: 2 }} /><span className="text-slate-500">{l}</span></span>
+                ))}
+              </div>
             </div>
-            <div className="w-full bg-black/40 rounded-xl overflow-auto">
-              {!hasWeeklyData ? (
-                <div className="flex items-center justify-center h-32 text-slate-500 text-xs">Simulate at least one week to see the Gantt.</div>
-              ) : (() => {
-                const totalWeeks = project.weeklyLogs.length;
-                const COL_W = 52, ROW_H = 30, LABEL_W = 140, HEADER_H = 24, PAD = 16;
-                const expandedEpics = window.__prismExpandedEpics || {};
 
-                const rows = [];
-                projectEpics.forEach(ep => {
-                  rows.push({ type: "epic", ep });
-                  if (expandedEpics[ep.id]) {
-                    projectStories.filter(s => s.epicId === ep.id).forEach(s => rows.push({ type: "story", s, ep }));
+            {!hasWeeklyData ? (
+              <div className="flex items-center gap-3 bg-black/30 rounded-lg p-4 text-slate-500 text-xs">
+                <span className="text-[#FFE600] text-lg">📅</span>
+                <div>
+                  <p className="font-medium text-slate-400">No timeline data yet</p>
+                  <p className="text-[11px] mt-0.5">Run the AI Generator and simulate at least one week to populate the timeline.</p>
+                </div>
+              </div>
+            ) : (() => {
+              const totalWeeks = project.weeklyLogs.length;
+              const plannedWeeks = Math.ceil((project.plannedDays || 90) / 7);
+              const displayWeeks = Math.max(totalWeeks, plannedWeeks);
+              const COL_W = 44, ROW_H = 34, LABEL_W = 150, SPRINT_H = 20, WEEK_H = 18;
+              const sprintList = sprints.filter(sp => sp.projectId === project.id);
+
+              const getSpan = (epicId, storyId = null) => {
+                const src = storyId
+                  ? projectStories.filter(s => s.id === storyId)
+                  : projectStories.filter(s => s.epicId === epicId);
+                if (!src.length) return { start: 1, end: Math.min(2, totalWeeks) };
+                let start = Infinity, end = 0;
+                src.forEach(s => {
+                  const spIdx = sprintList.findIndex(sp => sp.id === s.sprintId);
+                  if (spIdx >= 0) {
+                    const sw = spIdx * 2 + 1, ew = sw + 1;
+                    if (sw < start) start = sw;
+                    if (ew > end) end = ew;
                   }
                 });
+                if (!isFinite(start)) return { start: 1, end: Math.min(2, totalWeeks) };
+                return { start: Math.max(1, start), end: Math.min(displayWeeks, end) };
+              };
 
-                const svgH = HEADER_H + rows.length * ROW_H + PAD;
-                const svgW = LABEL_W + totalWeeks * COL_W;
+              const svgH = SPRINT_H + WEEK_H + projectEpics.length * ROW_H + 28;
+              const svgW = LABEL_W + displayWeeks * COL_W;
 
-                const getSpan = (epicId, storyId = null) => {
-                  const src = storyId
-                    ? projectStories.filter(s => s.id === storyId)
-                    : projectStories.filter(s => s.epicId === epicId);
-                  if (!src.length) return { start: 1, end: totalWeeks };
-                  const projectSprintList = sprints.filter(sp => sp.projectId === project.id);
-                  let start = Infinity, end = 0;
-                  src.forEach(s => {
-                    const spIdx = projectSprintList.findIndex(sp => sp.id === s.sprintId);
-                    if (spIdx >= 0) {
-                      const sw = spIdx * 2 + 1, ew = Math.min(sw + 1, totalWeeks);
-                      if (sw < start) start = sw;
-                      if (ew > end) end = ew;
-                    }
-                  });
-                  if (!isFinite(start)) return { start: 1, end: totalWeeks };
-                  return { start: Math.max(1, start), end: Math.min(totalWeeks, end) };
-                };
+              return (
+                <div className="overflow-x-auto rounded-lg bg-black/30">
+                  <svg width={svgW} height={svgH} style={{ display: "block", minWidth: svgW }}>
 
-                const getProgress = (epicId, storyId = null) => {
-                  const src = storyId
-                    ? projectStories.filter(s => s.id === storyId)
-                    : projectStories.filter(s => s.epicId === epicId);
-                  if (!src.length) return 0;
-                  return src.filter(s => s.status === "Done").length / src.length;
-                };
-
-                const sprintLabels = sprints.filter(sp => sp.projectId === project.id);
-
-                return (
-                  <svg width={svgW} height={svgH} style={{ display: "block", fontFamily: "monospace", minWidth: svgW }}>
-                    {/* Sprint header bands */}
-                    {sprintLabels.map((sp, idx) => {
+                    {/* Sprint bands in header */}
+                    {sprintList.map((sp, idx) => {
                       const startCol = idx * 2;
-                      const cols = Math.min(2, totalWeeks - startCol);
-                      if (cols <= 0) return null;
+                      const colSpan = Math.min(2, displayWeeks - startCol);
+                      if (colSpan <= 0) return null;
+                      const x = LABEL_W + startCol * COL_W;
+                      const w = colSpan * COL_W;
                       return (
                         <g key={sp.id}>
-                          <rect x={LABEL_W + startCol * COL_W} y={0} width={cols * COL_W} height={HEADER_H}
-                            fill={idx % 2 === 0 ? "rgba(255,230,0,0.05)" : "rgba(255,255,255,0.02)"} />
-                          <text x={LABEL_W + startCol * COL_W + (cols * COL_W) / 2} y={14}
-                            fill="#666" fontSize="8" textAnchor="middle" fontWeight="bold">
-                            {sp.name?.replace("Sprint ", "S") || `S${idx + 1}`}
-                          </text>
+                          <rect x={x} y={0} width={w} height={SPRINT_H} fill={idx % 2 === 0 ? "rgba(255,230,0,0.06)" : "rgba(255,255,255,0.02)"} />
+                          <line x1={x} y1={0} x2={x} y2={svgH} stroke="#1f1f1f" strokeWidth="1" />
+                          <text x={x + w / 2} y={13} fill="#666" fontSize="8" textAnchor="middle" fontWeight="bold">{sp.name?.replace("Sprint ", "S") || `S${idx+1}`}</text>
                         </g>
                       );
                     })}
-                    {/* Week column headers */}
-                    {Array.from({ length: totalWeeks }).map((_, i) => (
-                      <g key={i}>
-                        <rect x={LABEL_W + i * COL_W} y={0} width={COL_W} height={svgH}
-                          fill={i % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent"} />
-                        <text x={LABEL_W + i * COL_W + COL_W / 2} y={HEADER_H - 4}
-                          fill={i + 1 === selectedWeek ? "#FFE600" : "#3a3a3a"}
-                          fontSize="7" textAnchor="middle">W{i + 1}</text>
-                      </g>
-                    ))}
+                    {/* Sprint band border bottom */}
+                    <line x1={LABEL_W} y1={SPRINT_H} x2={svgW} y2={SPRINT_H} stroke="#222" strokeWidth="1" />
 
-                    {/* Rows */}
-                    {rows.map((row, idx) => {
-                      const rowY = HEADER_H + idx * ROW_H;
-                      if (row.type === "epic") {
-                        const { start, end } = getSpan(row.ep.id);
-                        const progress = getProgress(row.ep.id);
-                        const isCompleted = progress >= 1;
-                        const barX = LABEL_W + (start - 1) * COL_W + 3;
-                        const barW = (end - start + 1) * COL_W - 6;
-                        const barH = 14, barY = rowY + (ROW_H - barH) / 2;
-                        const epicLogs = project.weeklyLogs.filter(l => l.week >= start && l.week <= end);
-                        const delayW = epicLogs.reduce((s, l) => s + (l.delayDays || 0), 0);
-                        const delayBarW = delayW > 0 ? Math.min(Math.round((delayW / 7) * COL_W), COL_W - 2) : 0;
-                        const isExpanded = expandedEpics[row.ep.id];
-                        const storyCount = projectStories.filter(s => s.epicId === row.ep.id).length;
-                        return (
-                          <g key={row.ep.id} style={{ cursor: "pointer" }}
-                            onClick={() => {
-                              window.__prismExpandedEpics = { ...expandedEpics, [row.ep.id]: !isExpanded };
-                              // Force re-render via tiny state trick
-                              setSubTab("analytics");
-                            }}>
-                            <rect x={0} y={rowY} width={svgW} height={ROW_H}
-                              fill={isExpanded ? "rgba(255,230,0,0.04)" : "transparent"} />
-                            <line x1={0} y1={rowY} x2={svgW} y2={rowY} stroke="#1a1a1a" strokeWidth="1" />
-                            <text x={6} y={rowY + ROW_H / 2 + 4} fill={isCompleted ? "#22c55e" : "#ccc"}
-                              fontSize="8" fontWeight="bold">
-                              {isExpanded ? "▼" : "▶"} {row.ep.name.length > 14 ? row.ep.name.slice(0, 14) + "…" : row.ep.name}
+                    {/* Week column headers */}
+                    {Array.from({ length: displayWeeks }).map((_, i) => {
+                      const isSimulated = i < totalWeeks;
+                      const isCurrent = i + 1 === selectedWeek;
+                      const x = LABEL_W + i * COL_W;
+                      return (
+                        <g key={i}>
+                          <rect x={x} y={SPRINT_H} width={COL_W} height={WEEK_H}
+                            fill={isCurrent ? "rgba(255,230,0,0.12)" : isSimulated ? "rgba(255,255,255,0.015)" : "transparent"} />
+                          <text x={x + COL_W / 2} y={SPRINT_H + 12}
+                            fill={isCurrent ? "#FFE600" : isSimulated ? "#555" : "#333"}
+                            fontSize="7" textAnchor="middle" fontWeight={isCurrent ? "bold" : "normal"}>
+                            W{i + 1}{!isSimulated ? "" : ""}
+                          </text>
+                          {!isSimulated && (
+                            <text x={x + COL_W / 2} y={SPRINT_H + 17} fill="#2a2a2a" fontSize="5" textAnchor="middle">plan</text>
+                          )}
+                        </g>
+                      );
+                    })}
+                    {/* Header divider */}
+                    <line x1={0} y1={SPRINT_H + WEEK_H} x2={svgW} y2={SPRINT_H + WEEK_H} stroke="#1f1f1f" strokeWidth="1" />
+
+                    {/* Label column header */}
+                    <rect x={0} y={0} width={LABEL_W} height={SPRINT_H + WEEK_H} fill="#0a0a0a" />
+                    <text x={8} y={SPRINT_H / 2 + 4} fill="#444" fontSize="8" fontWeight="bold">EPIC / PHASE</text>
+                    <text x={8} y={SPRINT_H + 12} fill="#333" fontSize="7">Progress</text>
+
+                    {/* Epic rows */}
+                    {projectEpics.map((ep, epIdx) => {
+                      const rowY = SPRINT_H + WEEK_H + epIdx * ROW_H;
+                      const { start, end } = getSpan(ep.id);
+                      const epStories = projectStories.filter(s => s.epicId === ep.id);
+                      const doneCount = epStories.filter(s => s.status === "Done").length;
+                      const progress = epStories.length > 0 ? doneCount / epStories.length : 0;
+                      const isComplete = progress >= 1;
+                      const isActive = epStories.some(s => s.status === "In Progress");
+                      const hasDelay = project.weeklyLogs.slice(start - 1, end).some(l => l.delayDays > 0);
+                      const barColor = isComplete ? "#22c55e" : hasDelay ? "#ef4444" : isActive ? "#FFE600" : "#60a5fa";
+                      const barX = LABEL_W + (start - 1) * COL_W + 4;
+                      const barW = (end - start + 1) * COL_W - 8;
+                      const barY = rowY + 8;
+                      const barH = 18;
+
+                      return (
+                        <g key={ep.id}>
+                          {/* Row separator */}
+                          <line x1={0} y1={rowY} x2={svgW} y2={rowY} stroke="#131313" strokeWidth="1" />
+                          {/* Alternate row shading */}
+                          {epIdx % 2 === 0 && <rect x={LABEL_W} y={rowY} width={svgW - LABEL_W} height={ROW_H} fill="rgba(255,255,255,0.012)" />}
+                          {/* Label */}
+                          <rect x={0} y={rowY} width={LABEL_W} height={ROW_H} fill="#080808" />
+                          <text x={8} y={rowY + 15} fill={isComplete ? "#22c55e" : "#ccc"} fontSize="8" fontWeight="600">
+                            {isComplete ? "✓ " : isActive ? "▶ " : "○ "}{ep.name.length > 17 ? ep.name.slice(0, 17) + "…" : ep.name}
+                          </text>
+                          <text x={8} y={rowY + 26} fill="#444" fontSize="6.5">
+                            {doneCount}/{epStories.length} stories · {Math.round(progress * 100)}%
+                          </text>
+
+                          {/* Track */}
+                          <rect x={LABEL_W + 4} y={barY} width={displayWeeks * COL_W - 8} height={barH} fill="#141414" rx="4" />
+                          {/* Progress fill */}
+                          <rect x={barX} y={barY} width={barW} height={barH} fill={barColor} rx="4" opacity="0.2" />
+                          {/* Filled portion */}
+                          {progress > 0 && (
+                            <rect x={barX} y={barY} width={Math.max(6, barW * progress)} height={barH} fill={barColor} rx="4" opacity="0.9" />
+                          )}
+                          {/* Label inside bar */}
+                          {barW > 30 && (
+                            <text x={barX + barW / 2} y={barY + barH / 2 + 3} fill={isComplete ? "#fff" : "#000"} fontSize="7" fontWeight="bold" textAnchor="middle">
+                              {ep.name.length > 12 ? ep.name.slice(0, 12) + "…" : ep.name}
                             </text>
-                            <text x={LABEL_W - 6} y={rowY + ROW_H / 2 + 4} fill="#555" fontSize="7" textAnchor="end">
-                              {storyCount} stories
-                            </text>
-                            <rect x={barX} y={barY} width={barW} height={barH} fill="#111" rx="3" />
-                            <rect x={barX} y={barY} width={Math.max(3, barW * progress)} height={barH}
-                              fill={isCompleted ? "#22c55e" : "#FFE600"} rx="3" opacity="0.9" />
-                            {delayBarW > 0 && (
-                              <rect x={barX + barW} y={barY + 3} width={delayBarW} height={barH - 6}
-                                fill="#ef4444" rx="2" opacity="0.8" />
-                            )}
-                            {barW > 24 && (
-                              <text x={barX + 4} y={barY + barH / 2 + 3} fill={isCompleted ? "#fff" : "#000"} fontSize="7" fontWeight="bold">
-                                {Math.round(progress * 100)}%
-                              </text>
-                            )}
-                          </g>
-                        );
-                      } else {
-                        // Story row
-                        const st = row.s;
-                        const { start, end } = getSpan(null, st.id);
-                        const isDone = st.status === "Done";
-                        const barX = LABEL_W + (start - 1) * COL_W + 3;
-                        const barW2 = (end - start + 1) * COL_W - 6;
-                        const barH = 10, barY = rowY + (ROW_H - barH) / 2;
-                        const statusColor = isDone ? "#22c55e" : st.status === "In Progress" ? "#60a5fa" : st.status === "Reviewing" ? "#a78bfa" : "#444";
-                        return (
-                          <g key={st.id}>
-                            <rect x={0} y={rowY} width={svgW} height={ROW_H} fill="rgba(255,255,255,0.01)" />
-                            <line x1={0} y1={rowY} x2={svgW} y2={rowY} stroke="#141414" strokeWidth="1" />
-                            <text x={18} y={rowY + ROW_H / 2 + 3} fill="#777" fontSize="7">
-                              {st.title.length > 18 ? st.title.slice(0, 18) + "…" : st.title}
-                            </text>
-                            <text x={LABEL_W - 6} y={rowY + ROW_H / 2 + 3} fill={statusColor} fontSize="6" textAnchor="end">{st.status}</text>
-                            <rect x={barX} y={barY} width={barW2} height={barH} fill={statusColor} rx="2" opacity="0.7" />
-                            {st.points && barW2 > 16 && (
-                              <text x={barX + 3} y={barY + barH / 2 + 3} fill="#fff" fontSize="6">{st.points}pt</text>
-                            )}
-                          </g>
-                        );
-                      }
+                          )}
+                          {/* Milestone diamond at end */}
+                          {isComplete && (
+                            <polygon
+                              points={`${barX + barW},${barY + barH / 2 - 5} ${barX + barW + 5},${barY + barH / 2} ${barX + barW},${barY + barH / 2 + 5} ${barX + barW - 5},${barY + barH / 2}`}
+                              fill="#22c55e" opacity="0.9"
+                            />
+                          )}
+                          {/* Story dots */}
+                          {epStories.slice(0, 6).map((st, si) => {
+                            const dotColor = st.status === "Done" ? "#22c55e" : st.status === "In Progress" ? "#FFE600" : st.status === "Review" ? "#a78bfa" : "#333";
+                            return (
+                              <circle key={st.id} cx={barX + (si + 0.5) * (barW / Math.max(epStories.length, 1))} cy={barY + barH + 5}
+                                r="2.5" fill={dotColor} opacity="0.8" />
+                            );
+                          })}
+                        </g>
+                      );
                     })}
 
-                    {/* Current week line */}
-                    <line x1={LABEL_W + (selectedWeek - 1) * COL_W} y1={HEADER_H}
-                      x2={LABEL_W + (selectedWeek - 1) * COL_W} y2={svgH - PAD}
-                      stroke="#fff" strokeWidth="1" strokeDasharray="3,2" opacity="0.3" />
+                    {/* Current week vertical indicator */}
+                    <line
+                      x1={LABEL_W + (selectedWeek - 0.5) * COL_W} y1={SPRINT_H}
+                      x2={LABEL_W + (selectedWeek - 0.5) * COL_W} y2={svgH - 12}
+                      stroke="#FFE600" strokeWidth="1.5" strokeDasharray="4,3" opacity="0.6"
+                    />
+                    <text x={LABEL_W + (selectedWeek - 0.5) * COL_W} y={svgH - 3} fill="#FFE600" fontSize="7" textAnchor="middle" fontWeight="bold">NOW</text>
 
-                    {/* Legend */}
-                    {[["#FFE600", "In Progress"], ["#22c55e", "Complete"], ["#ef4444", "Delay"], ["#60a5fa", "In Review"]].map(([c, l], i) => (
-                      <g key={l}>
-                        <rect x={LABEL_W + i * 72} y={svgH - 12} width={8} height={6} fill={c} rx="1" />
-                        <text x={LABEL_W + i * 72 + 11} y={svgH - 6} fill="#555" fontSize="7">{l}</text>
-                      </g>
-                    ))}
+                    {/* Planned end line */}
+                    {plannedWeeks <= displayWeeks && (
+                      <>
+                        <line
+                          x1={LABEL_W + plannedWeeks * COL_W} y1={SPRINT_H}
+                          x2={LABEL_W + plannedWeeks * COL_W} y2={svgH - 12}
+                          stroke="#6b6b6b" strokeWidth="1" strokeDasharray="2,3"
+                        />
+                        <text x={LABEL_W + plannedWeeks * COL_W - 2} y={svgH - 3} fill="#555" fontSize="7" textAnchor="end">Planned end</text>
+                      </>
+                    )}
+
+                    {/* Empty state for no epics */}
+                    {projectEpics.length === 0 && (
+                      <text x={LABEL_W + (displayWeeks * COL_W) / 2} y={SPRINT_H + WEEK_H + 30} fill="#333" fontSize="9" textAnchor="middle">
+                        No epics yet — run AI Generator to populate timeline
+                      </text>
+                    )}
                   </svg>
-                );
-              })()}
-            </div>
+                </div>
+              );
+            })()}
+
+            {/* Summary row below timeline */}
+            {hasWeeklyData && (
+              <div className="flex items-center gap-6 pt-2 border-t border-white/6 text-[10px] text-slate-600">
+                <span>Weeks simulated: <span className="text-white font-mono">{project.weeklyLogs.length}</span></span>
+                <span>Planned duration: <span className="text-white font-mono">{Math.ceil((project.plannedDays || 90) / 7)} weeks</span></span>
+                <span>Avg velocity: <span className="text-sky-400 font-mono">{Math.round(avgWeeklyVelocity)} pts/wk</span></span>
+                {predictedDelayWeeks > 0 && <span className="text-red-400 font-medium">⚠ ~{predictedDelayWeeks}wk projected overrun</span>}
+                {predictedDelayWeeks === 0 && weeksToFinish != null && <span className="text-green-400 font-medium">✓ On track — ~{weeksToFinish} weeks to complete</span>}
+              </div>
+            )}
           </div>
         </div>
       )}
